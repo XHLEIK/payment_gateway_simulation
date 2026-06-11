@@ -186,15 +186,15 @@ NODE_ENV=development
 DB_HOST=localhost
 DB_PORT=5432
 DB_USERNAME=postgres
-DB_PASSWORD=Subham@1234
+DB_PASSWORD=your_db_password
 DB_NAME=payment_gateway_db
 
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 
-JWT_SECRET=regilly_super_secret_fintech_key_2026
+JWT_SECRET=your_jwt_secret_key
 JWT_EXPIRES_IN=24h
-WEBHOOK_SECRET=regilly_webhook_secret_hmac_key_2026
+WEBHOOK_SECRET=your_webhook_secret_key
 ```
 
 ### 1. Database Setup & Seeding
