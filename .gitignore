@@ -8,3 +8,4 @@ logs/
 .gitnexus/
 *.pdf
 .DS_Store
+explanation.md
