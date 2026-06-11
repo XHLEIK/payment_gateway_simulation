@@ -1,7 +1,7 @@
 {
 	"info": {
 		"_postman_id": "8c594c9d-8302-4680-ba88-bb71d2b8b9ef",
-		"name": "APPSC Payment Gateway & Wallet System",
+		"name": "Regilly Payment Gateway & Wallet System",
 		"description": "Postman collection for testing the NestJS backend APIs of the Payment Gateway and Wallet Management System.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
@@ -21,7 +21,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"name\": \"Subham Bose\",\n  \"email\": \"user@appsc.gov.in\",\n  \"password\": \"Subham@1234\",\n  \"role\": \"user\"\n}"
+							"raw": "{\n  \"name\": \"Subham Bose\",\n  \"email\": \"user@regilly.com\",\n  \"password\": \"Subham@1234\",\n  \"role\": \"user\"\n}"
 						},
 						"url": {
 							"raw": "http://localhost:3001/api/auth/register",
@@ -65,7 +65,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"email\": \"user@appsc.gov.in\",\n  \"password\": \"Subham@1234\"\n}"
+							"raw": "{\n  \"email\": \"user@regilly.com\",\n  \"password\": \"Subham@1234\"\n}"
 						},
 						"url": {
 							"raw": "http://localhost:3001/api/auth/login",
@@ -109,7 +109,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"email\": \"admin@appsc.gov.in\",\n  \"password\": \"Subham@1234\"\n}"
+							"raw": "{\n  \"email\": \"admin@regilly.com\",\n  \"password\": \"Subham@1234\"\n}"
 						},
 						"url": {
 							"raw": "http://localhost:3001/api/auth/login",

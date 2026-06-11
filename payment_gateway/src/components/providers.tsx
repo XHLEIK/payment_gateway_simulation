@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Attempt to restore session on page mount
   useEffect(() => {
     async function restoreSession() {
-      const savedToken = localStorage.getItem('appsc_pg_token');
+      const savedToken = localStorage.getItem('regilly_pg_token');
       if (savedToken) {
         setToken(savedToken);
         try {
@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.post('/auth/login', { email, password });
       const { access_token, user: userData } = res.data;
-      localStorage.setItem('appsc_pg_token', access_token);
+      localStorage.setItem('regilly_pg_token', access_token);
       setToken(access_token);
       setUser(userData);
       queryClient.clear(); // Clear cache upon login
@@ -79,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.post('/auth/register', { name, email, password, role });
       const { access_token, user: userData } = res.data;
-      localStorage.setItem('appsc_pg_token', access_token);
+      localStorage.setItem('regilly_pg_token', access_token);
       setToken(access_token);
       setUser(userData);
       queryClient.clear();
@@ -90,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    localStorage.removeItem('appsc_pg_token');
+    localStorage.removeItem('regilly_pg_token');
     setToken(null);
     setUser(null);
     queryClient.clear();

@@ -1,36 +1,78 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Regilly Assignment: Payment Gateway Frontend (Next.js)
 
-## Getting Started
+This is the Next.js frontend client portal for the **Payment Gateway & Wallet Management System**. It provides user interfaces for candidate wallets, transactions, peer-to-peer transfers, billing requests, and administrative controls.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 🚀 Key Features
+
+- **Rich Glassmorphic Design**: A premium dark-mode theme utilizing custom Vanilla CSS components, glowing gradients, hover scaling, and clean layouts.
+- **Dynamic Dashboard Metrics**: Displays current balance, transaction rates, and success rates. Includes interactive charts powered by **Recharts** to plot transaction volume trends.
+- **Interactive Wallet Controls**: Form fields to load money, verify credit cards, and execute peer-to-peer money transfers using transaction PIN locks.
+- **Sortable & Paginated Log Table**: Lists historical transactions with dynamic columns header sorting (`Date`, `Reference ID`, `Type`, `Amount`, `Status`).
+- **Administrative Portal**: Admin panel displaying global metrics, ledger audit logs, and approval buttons to trigger refunds for candidate debits.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Framework**: Next.js v16.x (React 19) App Router
+- **State Management & Querying**: TanStack React Query v5 (for cache synchronization and stale-while-revalidate data fetching)
+- **Data Visualization**: Recharts v3
+- **Icons**: Lucide React
+- **Styling**: Tailwind CSS v4 & Vanilla CSS variables
+
+---
+
+## 📂 Folder Layout
+
+```
+payment_gateway/
+├── public/                     # Static assets (images, icons)
+└── src/
+    ├── services/
+    │   └── api.ts              # Central API client (methods for JWT tokens, wallets, payments)
+    ├── components/
+    │   ├── layout-shell.tsx    # Global sidebar shell (separates admin/candidate views)
+    │   ├── providers.tsx       # Binds React Query client context
+    │   └── ui/                 # Shared UI elements
+    └── app/                    # Next.js App Router Page Views
+        ├── layout.tsx          # Binds core providers, viewport settings, and fonts
+        ├── page.tsx            # Root redirect logic
+        ├── login/              # Sign-in panel with credentials verification
+        ├── dashboard/          # Analytics dashboards for candidates & admins
+        ├── wallet/             # Balance actions (load, transfer, requests)
+        ├── transactions/       # Sortable and paginated logs list
+        └── admin/              # Global analytics & refund management
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## ⚙️ Environment Configuration
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+By default, the frontend connects to the backend API at `http://localhost:3001/api`. You can customize this by creating a `.env.local` file inside the `payment_gateway/` directory:
 
-## Learn More
+```env
+NEXT_PUBLIC_API_URL=http://localhost:3001/api
+```
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🚀 Setup & Running Locally
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 1. Install Dependencies
+```bash
+npm install
+```
 
-## Deploy on Vercel
+### 2. Launch Development Server
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) in your web browser to access the portal.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 3. Build for Production
+```bash
+npm run build
+npm run start
+```

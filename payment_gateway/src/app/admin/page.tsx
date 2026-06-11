@@ -146,7 +146,7 @@ export default function AdminPage() {
         <Card className="border border-zinc-900 bg-zinc-950">
           <CardHeader className="border-b border-zinc-900/50 pb-4 flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-base font-bold">Arunachal Pradesh Portal Users</CardTitle>
+              <CardTitle className="text-base font-bold">Regilly Assignment Portal Users</CardTitle>
               <CardDescription className="text-xs">Directory of all accounts registered in this portal session</CardDescription>
             </div>
           </CardHeader>

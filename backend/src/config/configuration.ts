@@ -16,10 +16,10 @@ export default () => ({
     password: process.env.REDIS_PASSWORD || undefined,
   },
   jwt: {
-    secret: process.env.JWT_SECRET || 'appsc_super_secret_fintech_key_2026',
+    secret: process.env.JWT_SECRET || 'regilly_super_secret_fintech_key_2026',
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   },
   webhook: {
-    secret: process.env.WEBHOOK_SECRET || 'appsc_webhook_secret_hmac_key_2026',
+    secret: process.env.WEBHOOK_SECRET || 'regilly_webhook_secret_hmac_key_2026',
   },
 });

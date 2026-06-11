@@ -38,7 +38,7 @@ import {
 export default function TransactionsPage() {
   const { user } = useAuth();
   
-  // Filtering & Pagination State
+  // Filtering, Pagination & Sorting State
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
   const [status, setStatus] = useState('');
@@ -48,11 +48,13 @@ export default function TransactionsPage() {
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
   const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
   const [showFilters, setShowFilters] = useState(false);
 
   // 1. Fetch transactions based on filter parameters
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['transactions', page, status, type, from, to, minAmount, maxAmount, search],
+    queryKey: ['transactions', page, status, type, from, to, minAmount, maxAmount, search, sortBy, sortOrder],
     queryFn: async () => {
       const res = await api.get('/transactions', {
         params: {
@@ -65,6 +67,8 @@ export default function TransactionsPage() {
           minAmount: minAmount || undefined,
           maxAmount: maxAmount || undefined,
           search: search || undefined,
+          sortBy,
+          sortOrder,
         },
       });
       return res.data;
@@ -79,6 +83,18 @@ export default function TransactionsPage() {
     setMinAmount('');
     setMaxAmount('');
     setSearch('');
+    setSortBy('createdAt');
+    setSortOrder('DESC');
+    setPage(1);
+  };
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC');
+    } else {
+      setSortBy(field);
+      setSortOrder('DESC');
+    }
     setPage(1);
   };
 
@@ -94,6 +110,7 @@ export default function TransactionsPage() {
           minAmount: minAmount || undefined,
           maxAmount: maxAmount || undefined,
           search: search || undefined,
+          format: 'csv',
         },
         responseType: 'blob', // Parse response as binary CSV file
       });
@@ -101,7 +118,7 @@ export default function TransactionsPage() {
       const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
       const downloadLink = document.createElement('a');
       downloadLink.href = blobUrl;
-      downloadLink.setAttribute('download', `appsc-transactions-report-${Date.now()}.csv`);
+      downloadLink.setAttribute('download', `regilly-transactions-report-${Date.now()}.csv`);
       document.body.appendChild(downloadLink);
       downloadLink.click();
       downloadLink.remove();
@@ -241,13 +258,23 @@ export default function TransactionsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Reference ID</TableHead>
+                    <TableHead className="cursor-pointer select-none hover:text-zinc-200" onClick={() => handleSort('createdAt')}>
+                      Date {sortBy === 'createdAt' && (sortOrder === 'ASC' ? ' ▲' : ' ▼')}
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none hover:text-zinc-200" onClick={() => handleSort('referenceId')}>
+                      Reference ID {sortBy === 'referenceId' && (sortOrder === 'ASC' ? ' ▲' : ' ▼')}
+                    </TableHead>
                     {user?.role === 'admin' && <TableHead>User Profile</TableHead>}
                     <TableHead>Gateway Details</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
+                    <TableHead className="cursor-pointer select-none hover:text-zinc-200" onClick={() => handleSort('type')}>
+                      Type {sortBy === 'type' && (sortOrder === 'ASC' ? ' ▲' : ' ▼')}
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none hover:text-zinc-200" onClick={() => handleSort('amount')}>
+                      Amount {sortBy === 'amount' && (sortOrder === 'ASC' ? ' ▲' : ' ▼')}
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none hover:text-zinc-200 text-right" onClick={() => handleSort('status')}>
+                      Status {sortBy === 'status' && (sortOrder === 'ASC' ? ' ▲' : ' ▼')}
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

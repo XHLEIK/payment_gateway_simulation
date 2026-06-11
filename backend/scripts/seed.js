@@ -15,7 +15,7 @@ async function seedDb() {
     await client.connect();
     console.log('Connected to payment_gateway_db.');
 
-    const sqlPath = path.join(__dirname, '..', 'schema.sql');
+    const sqlPath = path.join(__dirname, '..', '..', 'schema.sql');
     const sql = fs.readFileSync(sqlPath, 'utf8');
 
     console.log('Applying schema.sql...');

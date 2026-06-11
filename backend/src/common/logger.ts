@@ -7,7 +7,7 @@ export const winstonLoggerOptions = {
       format: winston.format.combine(
         winston.format.timestamp(),
         winston.format.ms(),
-        nestWinstonModuleUtilities.format.nestLike('APPSC-PG', {
+        nestWinstonModuleUtilities.format.nestLike('REGILLY-PG', {
           colors: true,
           prettyPrint: true,
         }),

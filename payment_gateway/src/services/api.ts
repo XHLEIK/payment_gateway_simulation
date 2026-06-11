@@ -12,7 +12,7 @@ api.interceptors.request.use(
   (config) => {
     // 1. Attach JWT Authorization Token
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('appsc_pg_token');
+      const token = localStorage.getItem('regilly_pg_token');
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }

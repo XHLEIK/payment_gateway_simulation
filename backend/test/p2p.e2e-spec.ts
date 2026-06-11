@@ -14,8 +14,8 @@ describe('P2P & PIN Security (e2e)', () => {
   let recipientId: string;
   
   const uniqueSuffix = Date.now();
-  const senderEmail = `sender-${uniqueSuffix}@appsc.gov.in`;
-  const recipientEmail = `recipient-${uniqueSuffix}@appsc.gov.in`;
+  const senderEmail = `sender-${uniqueSuffix}@regilly.com`;
+  const recipientEmail = `recipient-${uniqueSuffix}@regilly.com`;
   const password = 'TestPassword@123';
 
   beforeAll(async () => {
@@ -37,7 +37,7 @@ describe('P2P & PIN Security (e2e)', () => {
     // 1. Log in as admin to get token
     const adminLoginRes = await request(app.getHttpServer())
       .post('/api/auth/login')
-      .send({ email: 'admin@appsc.gov.in', password: 'Subham@1234' });
+      .send({ email: 'admin@regilly.com', password: 'Subham@1234' });
     console.log('Admin login status:', adminLoginRes.status);
     console.log('Admin login body:', adminLoginRes.body);
     adminToken = adminLoginRes.body.access_token;
@@ -96,7 +96,7 @@ describe('P2P & PIN Security (e2e)', () => {
       await request(app.getHttpServer())
         .get('/api/users/check-email')
         .set('Authorization', `Bearer ${senderToken}`)
-        .query({ email: 'nonexistent@appsc.gov.in' })
+        .query({ email: 'nonexistent@regilly.com' })
         .expect(404);
     });
 

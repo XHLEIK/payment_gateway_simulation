@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Arunachal Pradesh Payment Gateway & Wallet Dashboard',
-  description: 'Official Payment Gateway and Wallet Administration Dashboard for Arunachal Pradesh Public Service Commission (APPSC) portals.',
+  title: 'Regilly Assignment Payment Gateway & Wallet Dashboard',
+  description: 'Official Payment Gateway and Wallet Administration Dashboard for Regilly Assignment portals.',
 };
 
 export default function RootLayout({

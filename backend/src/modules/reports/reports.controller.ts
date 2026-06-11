@@ -29,6 +29,7 @@ export class ReportsController {
     @Query('minAmount') minAmount?: number,
     @Query('maxAmount') maxAmount?: number,
     @Query('search') search?: string,
+    @Query('format') format?: string,
   ) {
     const filters: any = {
       page: 1,

@@ -1,7 +1,14 @@
-# Arunachal Pradesh Public Service Commission (APPSC)
+# Regilly Assignment
 ## Payment Gateway & Wallet Management System
 
-A production-grade, highly secure, and concurrency-safe fintech payment gateway and wallet management system designed for APPSC candidate portals. This system supports candidate wallet top-ups, instant application payment processing, multi-stage state transitions, administrator-approved refund workflows, and real-time dashboard analytics.
+A production-grade, highly secure, and concurrency-safe fintech payment gateway and wallet management system designed for Regilly candidate portals. This system supports candidate wallet top-ups, instant application payment processing, multi-stage state transitions, administrator-approved refund workflows, and real-time dashboard analytics.
+
+---
+
+### 📖 Quick Links
+- **Interview Preparation Manual**: [explanation.md](file:///c:/Users/ASUS/Desktop/payment_gateway/explanation.md)
+- **NestJS Backend Details**: [backend/README.md](file:///c:/Users/ASUS/Desktop/payment_gateway/backend/README.md)
+- **Next.js Frontend Details**: [payment_gateway/README.md](file:///c:/Users/ASUS/Desktop/payment_gateway/payment_gateway/README.md)
 
 ---
 
@@ -185,9 +192,9 @@ DB_NAME=payment_gateway_db
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 
-JWT_SECRET=appsc_super_secret_fintech_key_2026
+JWT_SECRET=regilly_super_secret_fintech_key_2026
 JWT_EXPIRES_IN=24h
-WEBHOOK_SECRET=appsc_webhook_secret_hmac_key_2026
+WEBHOOK_SECRET=regilly_webhook_secret_hmac_key_2026
 ```
 
 ### 1. Database Setup & Seeding
@@ -197,10 +204,10 @@ cd backend
 npm install
 
 # Initialize database
-node init-db.js
+node scripts/init-db.js
 
 # Seed demo dataset
-node seed-demo.js
+node scripts/seed-demo.js
 ```
 
 ### 2. Run the Backend
@@ -221,12 +228,12 @@ The Next.js candidate portal will start on `http://localhost:3000`.
 ---
 
 ## 🔑 Demo Credentials
-Demo credentials are programmatically configured inside the seed data configuration (see [seed-demo.js](file:///c:/Users/ASUS/Desktop/payment_gateway/backend/seed-demo.js) or [schema.sql](file:///c:/Users/ASUS/Desktop/payment_gateway/schema.sql)). Default credentials for candidate and administrator accounts are set to local testing profiles:
+Demo credentials are programmatically configured inside the seed data configuration (see [seed-demo.js](file:///c:/Users/ASUS/Desktop/payment_gateway/backend/scripts/seed-demo.js) or [schema.sql](file:///c:/Users/ASUS/Desktop/payment_gateway/schema.sql)). Default credentials for candidate and administrator accounts are set to local testing profiles:
 
 | Role | Username | Starting Balance | Password Location |
 | :--- | :--- | :---: | :--- |
-| **Candidate (User)** | `user@appsc.gov.in` | ₹2,500.00 | Refer to `seed-demo.js` / `.env.example` |
-| **Administrator** | `admin@appsc.gov.in` | ₹10,000.00 | Refer to `seed-demo.js` / `.env.example` |
+| **Candidate (User)** | `user@regilly.com` | ₹2,500.00 | Refer to `seed-demo.js` / `.env.example` |
+| **Administrator** | `admin@regilly.com` | ₹10,000.00 | Refer to `seed-demo.js` / `.env.example` |
 
 ---
 

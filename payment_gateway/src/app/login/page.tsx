@@ -50,12 +50,12 @@ export default function LoginPage() {
 
   const prefill = (type: 'user' | 'admin') => {
     if (type === 'admin') {
-      setEmail('admin@appsc.gov.in');
+      setEmail('admin@regilly.com');
       setPassword('Subham@1234');
       setName('System Administrator');
       setRole('admin');
     } else {
-      setEmail('user@appsc.gov.in');
+      setEmail('user@regilly.com');
       setPassword('Subham@1234');
       setName('Subham Bose');
       setRole('user');
@@ -78,13 +78,13 @@ export default function LoginPage() {
       <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 rounded-full bg-indigo-500/5 blur-3xl" />
 
       <div className="w-full max-w-md relative z-10">
-        {/* APPSC Top branding */}
+        {/* Regilly Top branding */}
         <div className="flex flex-col items-center mb-8 text-center">
           <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center font-extrabold text-lg tracking-widest text-white shadow-lg mb-3">
-            AP
+            RA
           </div>
           <h1 className="text-xl font-bold text-zinc-100 uppercase tracking-widest">
-            Arunachal Pradesh Portals
+            Regilly Assignment Portal
           </h1>
           <p className="text-zinc-500 text-xs font-semibold uppercase tracking-wider mt-1">
             Payment Service Gateway & Wallet Dashboard
@@ -98,7 +98,7 @@ export default function LoginPage() {
             </CardTitle>
             <CardDescription className="text-zinc-500 text-sm">
               {isRegisterMode 
-                ? 'Register to initialize your APPSC wallet instantly.' 
+                ? 'Register to initialize your Regilly wallet instantly.' 
                 : 'Access your wallet, transactions, and gateways.'
               }
             </CardDescription>
@@ -135,7 +135,7 @@ export default function LoginPage() {
               <Input
                 label="Email Address"
                 type="email"
-                placeholder="name@appsc.gov.in"
+                placeholder="name@regilly.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

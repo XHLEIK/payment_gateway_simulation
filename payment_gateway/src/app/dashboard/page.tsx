@@ -154,7 +154,7 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2">
                 <Wallet className="h-5 w-5 text-indigo-400" />
                 <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">
-                  APPSC Wallet Balance
+                  Regilly Wallet Balance
                 </span>
               </div>
             </CardHeader>
@@ -178,7 +178,7 @@ export default function DashboardPage() {
           {/* Quick Access Info Card */}
           <Card className="bg-zinc-950 border border-zinc-900">
             <CardHeader>
-              <CardTitle className="text-base font-bold">Arunachal Pradesh Gateways</CardTitle>
+              <CardTitle className="text-base font-bold">Regilly Gateways</CardTitle>
               <CardDescription className="text-xs">Secure transaction authorization guidelines</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3.5 text-xs text-zinc-400">

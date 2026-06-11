@@ -29,6 +29,8 @@ export class TransactionsController {
     @Query('minAmount') minAmount?: number,
     @Query('maxAmount') maxAmount?: number,
     @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
   ) {
     const filters: any = {
       page: page ? parseInt(page as any, 10) : 1,
@@ -40,6 +42,8 @@ export class TransactionsController {
       minAmount: minAmount ? parseFloat(minAmount as any) : undefined,
       maxAmount: maxAmount ? parseFloat(maxAmount as any) : undefined,
       search,
+      sortBy,
+      sortOrder,
     };
 
     // If the authenticated user is NOT an admin, force filter by their own userId

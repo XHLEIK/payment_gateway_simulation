@@ -31,7 +31,7 @@ export class PaymentsService {
     private readonly usersService: UsersService,
     private readonly walletsService: WalletsService,
   ) {
-    this.webhookSecret = this.configService.get<string>('webhook.secret', 'appsc_webhook_secret_hmac_key_2026');
+    this.webhookSecret = this.configService.get<string>('webhook.secret', 'regilly_webhook_secret_hmac_key_2026');
     this.port = this.configService.get<number>('port', 3001);
   }
 

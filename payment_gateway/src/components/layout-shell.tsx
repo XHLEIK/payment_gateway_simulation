@@ -45,7 +45,7 @@ export default function LayoutShell({ children }: LayoutShellProps) {
       <div className="flex-1 flex flex-col items-center justify-center min-h-screen bg-zinc-950">
         <Loader2 className="h-10 w-10 animate-spin text-indigo-500 mb-4" />
         <p className="text-zinc-400 text-sm font-medium animate-pulse">
-          Securing Arunachal Pradesh Portal Session...
+          Securing Regilly Assignment Portal Session...
         </p>
       </div>
     );
@@ -69,9 +69,9 @@ export default function LayoutShell({ children }: LayoutShellProps) {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
       {/* 1. Header Header */}
-      <header className="h-16 border-b border-zinc-900 bg-zinc-950 sticky top-0 z-40 flex items-center justify-between px-6">
+      <header className="h-16 border-b border-zinc-900 bg-zinc-950 flex items-center justify-between px-6 shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -81,14 +81,14 @@ export default function LayoutShell({ children }: LayoutShellProps) {
           </button>
           <div className="flex items-center gap-2">
             <span className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-sm text-white tracking-widest shadow-md">
-              AP
+              RA
             </span>
             <div className="flex flex-col">
               <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest leading-none">
-                APPSC Gateway
+                Regilly Gateway
               </span>
               <span className="text-sm font-extrabold text-zinc-200 tracking-tight">
-                Arunachal Pradesh Portal
+                Regilly Assignment Portal
               </span>
             </div>
           </div>
@@ -108,9 +108,9 @@ export default function LayoutShell({ children }: LayoutShellProps) {
         </div>
       </header>
 
-      <div className="flex-1 flex relative">
+      <div className="flex-1 flex relative overflow-hidden">
         {/* 2. Left Sidebar for Desktop */}
-        <aside className="hidden md:flex flex-col w-64 border-r border-zinc-900 bg-zinc-950/40 p-4 shrink-0 justify-between">
+        <aside className="hidden md:flex flex-col w-64 border-r border-zinc-900 bg-zinc-950/40 p-4 shrink-0 justify-between h-full">
           <div className="flex flex-col gap-1.5">
             {filteredNavItems.map((item) => {
               const active = pathname === item.path;
@@ -175,7 +175,7 @@ export default function LayoutShell({ children }: LayoutShellProps) {
         )}
 
         {/* 4. Page Content Body */}
-        <main className="flex-1 p-6 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full">
+        <main className="flex-1 p-6 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full h-full">
           {children}
         </main>
       </div>

@@ -173,6 +173,8 @@ export class TransactionsService {
     minAmount?: number;
     maxAmount?: number;
     search?: string;
+    sortBy?: string;
+    sortOrder?: 'ASC' | 'DESC';
   }) {
     const {
       userId,
@@ -185,6 +187,8 @@ export class TransactionsService {
       minAmount,
       maxAmount,
       search,
+      sortBy = 'createdAt',
+      sortOrder = 'DESC',
     } = filters;
 
     const offset = (page - 1) * limit;
@@ -231,7 +235,12 @@ export class TransactionsService {
       );
     }
 
-    qb.orderBy('txn.createdAt', 'DESC')
+    // Set sorting dynamically
+    const validSortFields = ['createdAt', 'amount', 'referenceId', 'status', 'type'];
+    const sortField = validSortFields.includes(sortBy) ? `txn.${sortBy}` : 'txn.createdAt';
+    const cleanOrder = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+    
+    qb.orderBy(sortField, cleanOrder)
       .skip(offset)
       .take(limit);
 

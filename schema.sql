@@ -1,5 +1,5 @@
 -- ============================================================================
--- ARUNACHAL PRADESH PUBLIC SERVICE COMMISSION (APPSC)
+-- REGILLY ASSIGNMENT
 -- PAYMENT GATEWAY & WALLET MANAGEMENT SYSTEM DATABASE SCHEMA
 -- ============================================================================
 
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS payment_requests (
 CREATE INDEX IF NOT EXISTS idx_txn_user_date ON transactions (user_id, created_at DESC);
 
 -- B. Partial Index for pending/active payments logs (Saves index disk space)
-CREATE INDEX IF NOT EXISTS idx_txn_status_partial ON transactions (status) WHERE status != 'SUCCESS';
+CREATE INDEX IF NOT EXISTS idx_txn_status ON transactions (status) WHERE status != 'SUCCESS';
 
 -- C. Gateway order index for webhook callbacks
 CREATE INDEX IF NOT EXISTS idx_txn_gateway_order ON transactions (gateway_order_id);
@@ -108,7 +108,7 @@ CREATE INDEX IF NOT EXISTS idx_pay_req_payee ON payment_requests (payee_id, stat
 
 -- Seed Admin
 INSERT INTO users (id, name, email, password_hash, role)
-VALUES ('a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', 'System Administrator', 'admin@appsc.gov.in', '$2b$10$RA.jVR8hPL4kL/JXN9FvuO8MC/IG3SIVh7tbnoWJ2n4iUuiXqD7v2', 'admin')
+VALUES ('a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', 'System Administrator', 'admin@regilly.com', '$2b$10$RA.jVR8hPL4kL/JXN9FvuO8MC/IG3SIVh7tbnoWJ2n4iUuiXqD7v2', 'admin')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO wallets (user_id, balance)
@@ -117,7 +117,7 @@ ON CONFLICT (user_id) DO NOTHING;
 
 -- Seed Standard User
 INSERT INTO users (id, name, email, password_hash, role)
-VALUES ('f5e4d3c2-b1a0-9f8e-7d6c-5b4a3f2e1d0c', 'Subham Bose', 'user@appsc.gov.in', '$2b$10$tMoxp.L2xHjY1yXWvIinveVjTeg.wY4o.x452g690v125P32V9g1i', 'user')
+VALUES ('f5e4d3c2-b1a0-9f8e-7d6c-5b4a3f2e1d0c', 'Subham Bose', 'user@regilly.com', '$2b$10$tMoxp.L2xHjY1yXWvIinveVjTeg.wY4o.x452g690v125P32V9g1i', 'user')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO wallets (user_id, balance)
