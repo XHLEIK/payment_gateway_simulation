@@ -9,3 +9,6 @@ logs/
 *.pdf
 .DS_Store
 explanation.md
+graphify-out/
+.gemini/
+GEMINI.md
