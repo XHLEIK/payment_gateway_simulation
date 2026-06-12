@@ -1,21 +1,33 @@
 import {
   Controller,
   Get,
+  Post,
   Param,
+  Body,
   Query,
   UseGuards,
+  ForbiddenException,
+  Req,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { TransactionStatus, TransactionType } from './entities/transaction.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/entities/notification.entity';
+import { UsersService } from '../users/users.service';
 
 @Controller('transactions')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class TransactionsController {
-  constructor(private readonly transactionsService: TransactionsService) {}
+  constructor(
+    private readonly transactionsService: TransactionsService,
+    private readonly notificationsService: NotificationsService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @Get()
   async findAll(
@@ -63,6 +75,8 @@ export class TransactionsController {
         status: item.status,
         gatewayOrderId: item.gatewayOrderId,
         gatewayPaymentId: item.gatewayPaymentId,
+        linkedTransactionId: item.linkedTransactionId,
+        reversalReason: item.reversalReason,
         createdAt: item.createdAt,
         user: user.role === UserRole.ADMIN ? {
           id: item.user?.id,
@@ -75,6 +89,40 @@ export class TransactionsController {
       limit: result.limit,
       totalPages: result.totalPages,
     };
+  }
+
+  @Get('pending-reversals')
+  @Roles(UserRole.ADMIN)
+  async getPendingReversals() {
+    const txns = await this.transactionsService.findPendingReversals();
+    // Only return sender transactions (TXN-SND-*) to avoid duplicates
+    return txns
+      .filter((t) => t.referenceId.startsWith('TXN-SND-'))
+      .map((t) => ({
+        id: t.id,
+        referenceId: t.referenceId,
+        amount: t.amount,
+        status: t.status,
+        reversalReason: t.reversalReason,
+        linkedTransactionId: t.linkedTransactionId,
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
+        user: t.user ? { id: t.user.id, name: t.user.name, email: t.user.email } : null,
+      }));
+  }
+
+  @Get('processing-transfers')
+  @Roles(UserRole.ADMIN)
+  async getProcessingTransfers() {
+    const txns = await this.transactionsService.findProcessingTransfers();
+    return txns.map((t) => ({
+      id: t.id,
+      referenceId: t.referenceId,
+      amount: t.amount,
+      status: t.status,
+      createdAt: t.createdAt,
+      user: t.user ? { id: t.user.id, name: t.user.name, email: t.user.email } : null,
+    }));
   }
 
   @Get(':id')
@@ -94,6 +142,8 @@ export class TransactionsController {
       status: txn.status,
       gatewayOrderId: txn.gatewayOrderId,
       gatewayPaymentId: txn.gatewayPaymentId,
+      linkedTransactionId: txn.linkedTransactionId,
+      reversalReason: txn.reversalReason,
       createdAt: txn.createdAt,
       auditLogs: txn.auditLogs.map((log) => ({
         fromStatus: log.fromStatus,
@@ -110,7 +160,95 @@ export class TransactionsController {
       })),
     };
   }
-}
 
-// Quick custom inline definition of ForbiddenException to ensure imports compile
-import { ForbiddenException } from '@nestjs/common';
+  // ============================================================
+  //  REVERSAL ENDPOINTS
+  // ============================================================
+
+  @Post(':id/request-reversal')
+  async requestReversal(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+  ) {
+    if (!reason || reason.trim().length < 3) {
+      throw new ForbiddenException('Please provide a valid reason for the reversal request');
+    }
+
+    const result = await this.transactionsService.requestReversal(id, user.userId, reason);
+
+    // Notify all admins about the reversal request
+    const allUsers = await this.usersService.findAll();
+    const adminIds = allUsers.filter((u) => u.role === UserRole.ADMIN).map((u) => u.id);
+
+    if (adminIds.length > 0) {
+      await this.notificationsService.createBulk(
+        adminIds,
+        NotificationType.REVERSAL_REQUESTED,
+        'New Reversal Request',
+        `User requested reversal for transfer ${result.senderTxn.referenceId} (₹${result.senderTxn.amount}). Reason: ${reason}`,
+        { transactionId: id, referenceId: result.senderTxn.referenceId },
+      );
+    }
+
+    return {
+      message: 'Reversal request submitted successfully. Awaiting admin approval.',
+      senderTransaction: result.senderTxn.referenceId,
+      status: result.senderTxn.status,
+    };
+  }
+
+  @Post(':id/approve-reversal')
+  @Roles(UserRole.ADMIN)
+  async approveReversal(
+    @CurrentUser() admin: any,
+    @Param('id') id: string,
+  ) {
+    const result = await this.transactionsService.approveReversal(id, admin.userId);
+
+    // Notify both sender and receiver
+    await this.notificationsService.create(
+      result.senderTxn.userId,
+      NotificationType.REVERSAL_APPROVED,
+      'Reversal Approved',
+      `Your reversal request for ${result.senderTxn.referenceId} has been approved. ₹${result.senderTxn.amount} has been credited back to your wallet.`,
+      { transactionId: result.senderTxn.id },
+    );
+    await this.notificationsService.create(
+      result.receiverTxn.userId,
+      NotificationType.REVERSAL_APPROVED,
+      'Transfer Reversed',
+      `Transfer ${result.receiverTxn.referenceId} (₹${result.receiverTxn.amount}) has been reversed by admin. The amount has been deducted from your wallet.`,
+      { transactionId: result.receiverTxn.id },
+    );
+
+    return {
+      message: 'Reversal approved. Funds have been transferred back.',
+      senderBalance: result.senderTxn.balanceAfter,
+      receiverBalance: result.receiverTxn.balanceAfter,
+    };
+  }
+
+  @Post(':id/reject-reversal')
+  @Roles(UserRole.ADMIN)
+  async rejectReversal(
+    @CurrentUser() admin: any,
+    @Param('id') id: string,
+  ) {
+    const txn = await this.transactionsService.rejectReversal(id, admin.userId);
+
+    // Notify the sender
+    await this.notificationsService.create(
+      txn.userId,
+      NotificationType.REVERSAL_REJECTED,
+      'Reversal Rejected',
+      `Your reversal request for ${txn.referenceId} has been rejected by admin. The transaction remains as successful.`,
+      { transactionId: txn.id },
+    );
+
+    return {
+      message: 'Reversal rejected. Transaction remains as SUCCESS.',
+      status: txn.status,
+    };
+  }
+}

@@ -31,12 +31,14 @@ CREATE TABLE IF NOT EXISTS transactions (
     reference_id VARCHAR(100) NOT NULL UNIQUE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     amount NUMERIC(15, 2) NOT NULL CHECK (amount > 0.00),
-    type VARCHAR(50) NOT NULL, -- 'CREDIT' | 'DEBIT'
-    status VARCHAR(50) NOT NULL DEFAULT 'INITIATED', -- 'INITIATED' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'REFUNDED'
+    type VARCHAR(50) NOT NULL, -- 'CREDIT' | 'DEBIT' | 'TRANSFER'
+    status VARCHAR(50) NOT NULL DEFAULT 'INITIATED', -- 'INITIATED' | 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'REFUNDED' | 'REVERSAL_PENDING' | 'REVERSED'
     gateway_order_id VARCHAR(100) UNIQUE,
     gateway_payment_id VARCHAR(100),
     request_id VARCHAR(255) UNIQUE, -- Idempotency Key
     balance_after NUMERIC(15, 2), -- Balance after transaction completes
+    linked_transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,
+    reversal_reason TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -82,6 +84,40 @@ CREATE TABLE IF NOT EXISTS payment_requests (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 8. Disputes Table (Transaction Dispute System)
+CREATE TABLE IF NOT EXISTS disputes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    evidence TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'OPEN', -- 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'REJECTED'
+    admin_notes TEXT,
+    resolved_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9. Notifications Table (In-App Notification System)
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    metadata JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 10. Daily Limits Table (Daily Spend Velocity Limits)
+CREATE TABLE IF NOT EXISTS daily_limits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    daily_limit NUMERIC(15, 2) NOT NULL DEFAULT 50000.00,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================================
 -- DATABASE INDEXES (Task 7 optimization specifications)
 -- ============================================================================
@@ -98,6 +134,11 @@ CREATE INDEX IF NOT EXISTS idx_txn_gateway_order ON transactions (gateway_order_
 -- D. Indexes for fast payment requests lookup
 CREATE INDEX IF NOT EXISTS idx_pay_req_payer ON payment_requests (payer_id, status);
 CREATE INDEX IF NOT EXISTS idx_pay_req_payee ON payment_requests (payee_id, status);
+
+-- E. Indexes for Disputes and Notifications
+CREATE INDEX IF NOT EXISTS idx_dispute_status ON disputes(status) WHERE status != 'RESOLVED';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dispute_txn_user ON disputes(transaction_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_notification_user_unread ON notifications(user_id, is_read) WHERE is_read = FALSE;
 
 -- ============================================================================
 -- INITIAL SEED DATA (Standard passwords: 'Subham@1234')

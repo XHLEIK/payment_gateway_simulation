@@ -16,6 +16,8 @@ import { RefundsModule } from './modules/refunds/refunds.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { DisputesModule } from './modules/disputes/disputes.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -60,6 +62,8 @@ import { AppService } from './app.service';
     PaymentsModule,
     AnalyticsModule,
     ReportsModule,
+    DisputesModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [

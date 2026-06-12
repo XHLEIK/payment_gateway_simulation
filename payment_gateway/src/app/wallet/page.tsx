@@ -49,6 +49,8 @@ export default function WalletPage() {
   const [sendError, setSendError] = useState('');
   const [sendSuccessMsg, setSendSuccessMsg] = useState('');
   const [sendLoading, setSendLoading] = useState(false);
+  const [simulateFailure, setSimulateFailure] = useState(false);
+  const [simulateProcessing, setSimulateProcessing] = useState(false);
 
   // Request Money state
   const [reqEmail, setReqEmail] = useState('');
@@ -68,6 +70,15 @@ export default function WalletPage() {
     queryKey: ['wallet-balance'],
     queryFn: async () => {
       const res = await api.get('/wallet/balance');
+      return res.data;
+    },
+  });
+
+  // Query Daily Limit
+  const { data: dailyLimitData } = useQuery({
+    queryKey: ['daily-limit'],
+    queryFn: async () => {
+      const res = await api.get('/wallet/daily-limit');
       return res.data;
     },
   });
@@ -197,12 +208,15 @@ export default function WalletPage() {
         recipientEmail: sendEmail,
         amount: amountNum,
         pin: sendPin,
-        requestId
+        requestId,
+        simulateFailure,
+        simulateProcessing
       });
       setSendSuccessMsg(res.data.message || 'Funds sent successfully');
       setSendStep('success');
       queryClient.invalidateQueries({ queryKey: ['wallet-balance'] });
       queryClient.invalidateQueries({ queryKey: ['wallet-history'] });
+      queryClient.invalidateQueries({ queryKey: ['daily-limit'] });
     } catch (err: any) {
       setSendError(err.response?.data?.message || 'Failed to transfer funds');
       if (err.response?.data?.message?.includes('locked')) {
@@ -277,6 +291,8 @@ export default function WalletPage() {
     setSetupPin('');
     setRecipientName('');
     setSendError('');
+    setSimulateFailure(false);
+    setSimulateProcessing(false);
   };
 
   const handleInitiateRecharge = (e: React.FormEvent) => {
@@ -478,6 +494,27 @@ export default function WalletPage() {
               {/* TAB 2: SEND MONEY FLOW */}
               {activeTab === 'send' && (
                 <div>
+                  {/* Daily Limit Progress Bar */}
+                  {dailyLimitData && (
+                    <div className="mb-5 p-3 rounded-lg bg-zinc-900/40 border border-zinc-900">
+                      <div className="flex justify-between text-[11px] font-bold text-zinc-400 mb-1">
+                        <span>Daily Limit: ₹{dailyLimitData.limit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        <span>Spent: ₹{dailyLimitData.spent.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-zinc-850 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            (dailyLimitData.spent / dailyLimitData.limit) >= 0.8 ? 'bg-red-500' : 'bg-indigo-500'
+                          }`}
+                          style={{ width: `${Math.min(100, (dailyLimitData.spent / dailyLimitData.limit) * 100)}%` }}
+                        />
+                      </div>
+                      <div className="mt-1 flex justify-between text-[10px] text-zinc-500">
+                        <span>{Math.round((dailyLimitData.spent / dailyLimitData.limit) * 100)}% used</span>
+                        <span className="font-semibold text-zinc-400">Remaining: ₹{dailyLimitData.remaining.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  )}
                   {sendStep === 'email' && (
                     <form onSubmit={handleVerifyRecipient} className="flex flex-col gap-4">
                       {sendError && (
@@ -557,6 +594,54 @@ export default function WalletPage() {
                         onChange={(e) => setSendPin(e.target.value.replace(/\D/g, ''))}
                         required
                       />
+
+                      {/* Simulation Toggles */}
+                      <div className="space-y-2.5 p-3 rounded-lg bg-zinc-900/30 border border-zinc-900/60 mt-1">
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
+                          Simulation Mode Controls
+                        </span>
+                        
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs text-zinc-300 font-medium">Simulate Failed Payment</label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSimulateFailure(!simulateFailure);
+                              if (!simulateFailure) setSimulateProcessing(false);
+                            }}
+                            className={`w-9 h-5 rounded-full transition-colors relative focus:outline-none cursor-pointer ${
+                              simulateFailure ? 'bg-red-600' : 'bg-zinc-800'
+                            }`}
+                          >
+                            <span 
+                              className={`absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform ${
+                                simulateFailure ? 'translate-x-4' : 'translate-x-0'
+                              }`} 
+                            />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs text-zinc-300 font-medium">Simulate Processing State</label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSimulateProcessing(!simulateProcessing);
+                              if (!simulateProcessing) setSimulateFailure(false);
+                            }}
+                            className={`w-9 h-5 rounded-full transition-colors relative focus:outline-none cursor-pointer ${
+                              simulateProcessing ? 'bg-amber-600' : 'bg-zinc-800'
+                            }`}
+                          >
+                            <span 
+                              className={`absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform ${
+                                simulateProcessing ? 'translate-x-4' : 'translate-x-0'
+                              }`} 
+                            />
+                          </button>
+                        </div>
+                      </div>
+
                       <div className="flex gap-2 mt-2">
                         <Button type="button" onClick={resetSendStep} variant="secondary" className="flex-1 text-xs py-1.5 font-bold">
                           Back

@@ -10,6 +10,7 @@ import { Repository, DataSource, EntityManager } from 'typeorm';
 import { Transaction, TransactionStatus, TransactionType } from './entities/transaction.entity';
 import { TransactionAudit } from './entities/transaction-audit.entity';
 import { WalletsService } from '../wallets/wallets.service';
+import { Wallet } from '../wallets/entities/wallet.entity';
 import { randomBytes } from 'crypto';
 
 @Injectable()
@@ -161,6 +162,262 @@ export class TransactionsService {
     }
   }
 
+  // ============================================================
+  //  P2P TRANSFER REVERSAL SYSTEM
+  // ============================================================
+
+  /**
+   * Request a reversal for a P2P transfer. Only the sender (TXN-SND-*) can request.
+   * Finds the linked receiver transaction and marks both as REVERSAL_PENDING.
+   */
+  async requestReversal(
+    transactionId: string,
+    userId: string,
+    reason: string,
+  ): Promise<{ senderTxn: Transaction; receiverTxn: Transaction }> {
+    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+      const txnRepo = manager.getRepository(Transaction);
+      const auditRepo = manager.getRepository(TransactionAudit);
+
+      const senderTxn = await txnRepo.findOne({ where: { id: transactionId } });
+      if (!senderTxn) {
+        throw new NotFoundException(`Transaction ${transactionId} not found`);
+      }
+
+      // Only sender can request reversal
+      if (senderTxn.userId !== userId) {
+        throw new BadRequestException('You can only request reversals for your own transactions');
+      }
+
+      // Must be a successful TRANSFER sent by this user
+      if (senderTxn.type !== TransactionType.TRANSFER) {
+        throw new BadRequestException('Reversals are only available for P2P transfers');
+      }
+
+      if (!senderTxn.referenceId.startsWith('TXN-SND-')) {
+        throw new BadRequestException('Reversals can only be requested by the sender');
+      }
+
+      if (senderTxn.status !== TransactionStatus.SUCCESS) {
+        throw new BadRequestException(
+          `Transaction must be in SUCCESS state for reversal. Current: ${senderTxn.status}`,
+        );
+      }
+
+      // Find the linked receiver transaction by requestId pattern
+      const receiverRequestId = senderTxn.requestId + '-rcv';
+      const receiverTxn = await txnRepo.findOne({
+        where: { requestId: receiverRequestId },
+      });
+
+      if (!receiverTxn) {
+        throw new NotFoundException('Linked receiver transaction not found');
+      }
+
+      // Check if receiver transaction is also SUCCESS
+      if (receiverTxn.status !== TransactionStatus.SUCCESS) {
+        throw new BadRequestException(
+          `Receiver transaction must be in SUCCESS state. Current: ${receiverTxn.status}`,
+        );
+      }
+
+      // Transition both to REVERSAL_PENDING
+      senderTxn.status = TransactionStatus.REVERSAL_PENDING;
+      senderTxn.reversalReason = reason;
+      senderTxn.linkedTransactionId = receiverTxn.id;
+
+      receiverTxn.status = TransactionStatus.REVERSAL_PENDING;
+      receiverTxn.reversalReason = reason;
+      receiverTxn.linkedTransactionId = senderTxn.id;
+
+      await txnRepo.save(senderTxn);
+      await txnRepo.save(receiverTxn);
+
+      // Audit logs
+      for (const txn of [senderTxn, receiverTxn]) {
+        const audit = auditRepo.create({
+          transactionId: txn.id,
+          fromStatus: TransactionStatus.SUCCESS,
+          toStatus: TransactionStatus.REVERSAL_PENDING,
+          actor: 'user',
+        } as any);
+        await auditRepo.save(audit);
+      }
+
+      this.logger.log(`Reversal requested for transactions ${senderTxn.id} / ${receiverTxn.id}`);
+
+      return { senderTxn, receiverTxn };
+    });
+  }
+
+  /**
+   * Admin approves reversal: atomically debits receiver's wallet and credits sender's wallet.
+   * Uses sorted-key deadlock prevention (same pattern as sendMoney).
+   */
+  async approveReversal(
+    transactionId: string,
+    adminId: string,
+  ): Promise<{ senderTxn: Transaction; receiverTxn: Transaction }> {
+    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+      const txnRepo = manager.getRepository(Transaction);
+      const auditRepo = manager.getRepository(TransactionAudit);
+
+      const senderTxn = await txnRepo.findOne({ where: { id: transactionId } });
+      if (!senderTxn) {
+        throw new NotFoundException(`Transaction ${transactionId} not found`);
+      }
+
+      if (senderTxn.status !== TransactionStatus.REVERSAL_PENDING) {
+        throw new BadRequestException(`Transaction must be in REVERSAL_PENDING state. Current: ${senderTxn.status}`);
+      }
+
+      if (!senderTxn.referenceId.startsWith('TXN-SND-')) {
+        throw new BadRequestException('Must approve reversal using the sender transaction ID');
+      }
+
+      if (!senderTxn.linkedTransactionId) {
+        throw new BadRequestException('Linked transaction ID is missing on reversal request');
+      }
+
+      // Find linked receiver transaction
+      const receiverTxn = await txnRepo.findOne({
+        where: { id: senderTxn.linkedTransactionId },
+      });
+
+      if (!receiverTxn) {
+        throw new NotFoundException('Linked receiver transaction not found');
+      }
+
+      // Sorted-key deadlock prevention: lock wallets in alphabetical UUID order
+      const senderId = senderTxn.userId;
+      const receiverId = receiverTxn.userId;
+      const amount = senderTxn.amount;
+
+      const sortedUserIds = [senderId, receiverId].sort();
+
+      // Lock wallets in deterministic order to prevent deadlocks
+      const walletRepo = manager.getRepository(Wallet);
+
+      const walletA = await walletRepo.findOne({
+        where: { userId: sortedUserIds[0] },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const walletB = await walletRepo.findOne({
+        where: { userId: sortedUserIds[1] },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!walletA || !walletB) {
+        throw new NotFoundException('One or more wallets not found');
+      }
+
+      const senderWallet = walletA.userId === senderId ? walletA : walletB;
+      const receiverWallet = walletA.userId === receiverId ? walletA : walletB;
+
+      // Check receiver has sufficient balance for reversal debit
+      if (receiverWallet.balance < amount) {
+        throw new BadRequestException(
+          `Receiver has insufficient balance (₹${receiverWallet.balance}) for reversal of ₹${amount}`,
+        );
+      }
+
+      // Execute compensating transaction: debit receiver, credit sender
+      receiverWallet.balance = parseFloat((Number(receiverWallet.balance) - amount).toFixed(2));
+      senderWallet.balance = parseFloat((Number(senderWallet.balance) + amount).toFixed(2));
+
+      await walletRepo.save(receiverWallet);
+      await walletRepo.save(senderWallet);
+
+      // Transition both to REVERSED
+      senderTxn.status = TransactionStatus.REVERSED;
+      senderTxn.balanceAfter = senderWallet.balance;
+      receiverTxn.status = TransactionStatus.REVERSED;
+      receiverTxn.balanceAfter = receiverWallet.balance;
+
+      await txnRepo.save(senderTxn);
+      await txnRepo.save(receiverTxn);
+
+      // Audit logs
+      for (const txn of [senderTxn, receiverTxn]) {
+        const audit = auditRepo.create({
+          transactionId: txn.id,
+          fromStatus: TransactionStatus.REVERSAL_PENDING,
+          toStatus: TransactionStatus.REVERSED,
+          actor: `admin:${adminId}`,
+        } as any);
+        await auditRepo.save(audit);
+      }
+
+      this.logger.log(`Reversal approved for transactions ${senderTxn.id} / ${receiverTxn.id} by admin ${adminId}`);
+
+      return { senderTxn, receiverTxn };
+    });
+  }
+
+  /**
+   * Admin rejects reversal: transitions both transactions back to SUCCESS.
+   */
+  async rejectReversal(transactionId: string, adminId: string): Promise<Transaction> {
+    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+      const txnRepo = manager.getRepository(Transaction);
+      const auditRepo = manager.getRepository(TransactionAudit);
+
+      const senderTxn = await txnRepo.findOne({ where: { id: transactionId } });
+      if (!senderTxn) {
+        throw new NotFoundException(`Transaction ${transactionId} not found`);
+      }
+
+      if (senderTxn.status !== TransactionStatus.REVERSAL_PENDING) {
+        throw new BadRequestException(`Transaction must be in REVERSAL_PENDING state`);
+      }
+
+      // Restore both transactions to SUCCESS
+      senderTxn.status = TransactionStatus.SUCCESS;
+
+      const receiverTxn = senderTxn.linkedTransactionId
+        ? await txnRepo.findOne({ where: { id: senderTxn.linkedTransactionId } })
+        : null;
+
+      if (receiverTxn && receiverTxn.status === TransactionStatus.REVERSAL_PENDING) {
+        receiverTxn.status = TransactionStatus.SUCCESS;
+        await txnRepo.save(receiverTxn);
+
+        const auditR = auditRepo.create({
+          transactionId: receiverTxn.id,
+          fromStatus: TransactionStatus.REVERSAL_PENDING,
+          toStatus: TransactionStatus.SUCCESS,
+          actor: `admin:${adminId}`,
+        } as any);
+        await auditRepo.save(auditR);
+      }
+
+      await txnRepo.save(senderTxn);
+
+      const auditS = auditRepo.create({
+        transactionId: senderTxn.id,
+        fromStatus: TransactionStatus.REVERSAL_PENDING,
+        toStatus: TransactionStatus.SUCCESS,
+        actor: `admin:${adminId}`,
+      } as any);
+      await auditRepo.save(auditS);
+
+      this.logger.log(`Reversal rejected for transaction ${transactionId} by admin ${adminId}`);
+
+      return senderTxn;
+    });
+  }
+
+  /**
+   * Get all pending reversals (admin view).
+   */
+  async findPendingReversals() {
+    return this.transactionRepository.find({
+      where: { status: TransactionStatus.REVERSAL_PENDING },
+      relations: { user: true },
+      order: { updatedAt: 'DESC' },
+    });
+  }
+
   // 3. Retrieve and Filter Transactions
   async findAll(filters: {
     userId?: string;
@@ -275,14 +532,31 @@ export class TransactionsService {
     });
   }
 
-  // Transition Validator Service (Task 1 + senior improvement)
+  // ============================================================
+  //  PROCESSING TRANSFER MANAGEMENT (Simulation Toggle Feature)
+  // ============================================================
+
+  /**
+   * Find all PROCESSING transfers for admin queue.
+   */
+  async findProcessingTransfers() {
+    return this.transactionRepository.find({
+      where: { status: TransactionStatus.PROCESSING, type: TransactionType.TRANSFER },
+      relations: { user: true },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  // Transition Validator Service (Extended state machine with reversal states)
   private validateTransition(from: TransactionStatus, to: TransactionStatus) {
     const allowedTransitions: Record<TransactionStatus, TransactionStatus[]> = {
       [TransactionStatus.INITIATED]: [TransactionStatus.PROCESSING, TransactionStatus.FAILED],
       [TransactionStatus.PROCESSING]: [TransactionStatus.SUCCESS, TransactionStatus.FAILED],
-      [TransactionStatus.SUCCESS]: [TransactionStatus.REFUNDED],
+      [TransactionStatus.SUCCESS]: [TransactionStatus.REFUNDED, TransactionStatus.REVERSAL_PENDING],
       [TransactionStatus.FAILED]: [],
       [TransactionStatus.REFUNDED]: [],
+      [TransactionStatus.REVERSAL_PENDING]: [TransactionStatus.REVERSED, TransactionStatus.SUCCESS],
+      [TransactionStatus.REVERSED]: [],
     };
 
     const targets = allowedTransitions[from] || [];

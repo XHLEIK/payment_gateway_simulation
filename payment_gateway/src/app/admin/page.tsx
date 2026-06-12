@@ -32,7 +32,7 @@ import {
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'users' | 'refunds'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'refunds' | 'disputes' | 'processing'>('users');
   const [actioningId, setActioningId] = useState<string | null>(null);
 
   // 1. Fetch Users List
@@ -55,7 +55,27 @@ export default function AdminPage() {
     enabled: activeTab === 'refunds',
   });
 
-  // 3. Approve Refund Mutation
+  // 3. Fetch Disputes List
+  const { data: disputes, isLoading: disputesLoading } = useQuery({
+    queryKey: ['admin-disputes'],
+    queryFn: async () => {
+      const res = await api.get('/disputes');
+      return res.data.items;
+    },
+    enabled: activeTab === 'disputes',
+  });
+
+  // 4. Fetch Processing Transfers List
+  const { data: processingTransfers, isLoading: processingLoading } = useQuery({
+    queryKey: ['admin-processing-transfers'],
+    queryFn: async () => {
+      const res = await api.get('/transactions/processing-transfers');
+      return res.data;
+    },
+    enabled: activeTab === 'processing',
+  });
+
+  // 5. Approve Refund Mutation
   const approveMutation = useMutation({
     mutationFn: async (id: string) => {
       setActioningId(id);
@@ -75,7 +95,7 @@ export default function AdminPage() {
     },
   });
 
-  // 4. Reject Refund Mutation
+  // 6. Reject Refund Mutation
   const rejectMutation = useMutation({
     mutationFn: async (id: string) => {
       setActioningId(id);
@@ -91,6 +111,86 @@ export default function AdminPage() {
       setActioningId(null);
     },
   });
+
+  // 7. Update Dispute Status Mutation
+  const updateDisputeStatusMutation = useMutation({
+    mutationFn: async ({ id, status, adminNotes }: { id: string; status: string; adminNotes?: string }) => {
+      setActioningId(id);
+      const res = await api.patch(`/disputes/${id}/status`, { status, adminNotes });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-disputes'] });
+      setActioningId(null);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.message || err.message || 'Failed to update dispute');
+      setActioningId(null);
+    },
+  });
+
+  // 8. Approve Processing Transfer Mutation
+  const approveProcessingMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setActioningId(id);
+      const res = await api.post(`/wallet/approve-processing/${id}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-processing-transfers'] });
+      queryClient.invalidateQueries({ queryKey: ['wallet-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      setActioningId(null);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.message || err.message || 'Failed to approve transfer');
+      setActioningId(null);
+    },
+  });
+
+  // 9. Reject Processing Transfer Mutation
+  const rejectProcessingMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setActioningId(id);
+      const res = await api.post(`/wallet/reject-processing/${id}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-processing-transfers'] });
+      setActioningId(null);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.message || err.message || 'Failed to reject transfer');
+      setActioningId(null);
+    },
+  });
+
+  const handleEditDailyLimit = async (userId: string, userName: string) => {
+    const limitInput = prompt(`Configure Daily transaction limit for ${userName} (INR):`, "50000");
+    if (limitInput === null) return;
+    const limit = parseFloat(limitInput);
+    if (isNaN(limit) || limit <= 0) {
+      alert("Please enter a valid positive number.");
+      return;
+    }
+
+    try {
+      await api.post(`/wallet/daily-limit/${userId}`, { limit });
+      alert(`Daily limit for ${userName} set to ₹${limit.toLocaleString('en-IN')}`);
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to update daily limit');
+    }
+  };
+
+  const handleUpdateDispute = (id: string, status: string) => {
+    let notes: string | null = "";
+    if (status === 'RESOLVED' || status === 'REJECTED') {
+      notes = prompt(`Provide admin resolution notes for this dispute:`);
+      if (notes === null) return; // user cancelled
+    }
+    updateDisputeStatusMutation.mutate({ id, status, adminNotes: notes || undefined });
+  };
 
   const handleApprove = (id: string) => {
     if (confirm('Are you sure you want to approve this refund? The transaction amount will be credited back/debited from the corresponding wallet balance.')) {
@@ -139,6 +239,30 @@ export default function AdminPage() {
           <Undo2 className="h-4.5 w-4.5" />
           Refund Requests
         </button>
+
+        <button
+          onClick={() => setActiveTab('disputes')}
+          className={`flex items-center gap-2 pb-3.5 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+            activeTab === 'disputes'
+              ? 'border-indigo-500 text-indigo-400'
+              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <AlertCircle className="h-4.5 w-4.5" />
+          Disputes
+        </button>
+
+        <button
+          onClick={() => setActiveTab('processing')}
+          className={`flex items-center gap-2 pb-3.5 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+            activeTab === 'processing'
+              ? 'border-indigo-500 text-indigo-400'
+              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <Clock className="h-4.5 w-4.5" />
+          Processing Queue
+        </button>
       </div>
 
       {/* TAB 1: User Directory */}
@@ -166,7 +290,8 @@ export default function AdminPage() {
                     <TableHead>User Name</TableHead>
                     <TableHead>Email Address</TableHead>
                     <TableHead>Registered Date</TableHead>
-                    <TableHead className="text-right">Access Role</TableHead>
+                    <TableHead>Access Role</TableHead>
+                    <TableHead className="text-right">Daily Limit</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -176,14 +301,22 @@ export default function AdminPage() {
                       <TableCell className="text-zinc-400">{u.email}</TableCell>
                       <TableCell className="text-xs text-zinc-500">
                         {new Date(u.createdAt).toLocaleDateString('en-IN', {
-                          day: '2-digit', month: 'short', year: 'numeric',
-                          hour: '2-digit', minute: '2-digit'
+                          day: '2-digit', month: 'short', year: 'numeric'
                         })}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell>
                         <Badge variant={u.role === 'admin' ? 'info' : 'neutral'}>
                           {u.role}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          onClick={() => handleEditDailyLimit(u.id, u.name)}
+                          variant="ghost"
+                          className="text-xs py-1 px-2 border border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                        >
+                          Set Limit
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -286,6 +419,220 @@ export default function AdminPage() {
                               Resolved by Admin
                             </span>
                           )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {/* TAB 3: Disputes review */}
+      {activeTab === 'disputes' && (
+        <Card className="border border-zinc-900 bg-zinc-950">
+          <CardHeader className="border-b border-zinc-900/50 pb-4">
+            <CardTitle className="text-base font-bold">Transaction Disputes</CardTitle>
+            <CardDescription className="text-xs">Audit disputes opened by users on payments</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {disputesLoading ? (
+              <div className="py-24 flex justify-center items-center">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+              </div>
+            ) : !disputes || disputes.length === 0 ? (
+              <div className="py-24 text-center text-zinc-500 text-sm">
+                No disputes logged.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Filed Date</TableHead>
+                    <TableHead>User Profile</TableHead>
+                    <TableHead>Original Reference</TableHead>
+                    <TableHead>Dispute Reason</TableHead>
+                    <TableHead>Evidence</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Admin Notes</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {disputes.map((d: any) => {
+                    const isOpen = d.status === 'OPEN';
+                    const isUnderReview = d.status === 'UNDER_REVIEW';
+                    const isResolved = d.status === 'RESOLVED';
+                    const isRejected = d.status === 'REJECTED';
+                    const isActioning = actioningId === d.id;
+
+                    return (
+                      <TableRow key={d.id}>
+                        <TableCell className="text-xs text-zinc-500">
+                          {new Date(d.createdAt).toLocaleDateString('en-IN', {
+                            day: '2-digit', month: 'short', year: 'numeric'
+                          })}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-zinc-300">{d.user?.name || 'N/A'}</span>
+                            <span className="text-zinc-500 text-[10px]">{d.user?.email || 'N/A'}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs font-bold text-zinc-400">
+                          {d.transaction?.referenceId || 'N/A'}
+                          <div className="text-[10px] text-zinc-500 font-sans mt-0.5">₹{Number(d.transaction?.amount || 0).toFixed(2)}</div>
+                        </TableCell>
+                        <TableCell className="text-xs text-zinc-300 max-w-[150px] truncate" title={d.reason}>
+                          {d.reason}
+                        </TableCell>
+                        <TableCell className="text-xs text-zinc-400 max-w-[150px] truncate" title={d.evidence}>
+                          {d.evidence || '-'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={
+                            isResolved ? 'success' : isRejected ? 'danger' : isUnderReview ? 'info' : 'warning'
+                          }>
+                            {d.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-zinc-400 max-w-[150px] truncate" title={d.adminNotes}>
+                          {d.adminNotes || '-'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1.5">
+                            {isOpen && (
+                              <Button
+                                onClick={() => handleUpdateDispute(d.id, 'UNDER_REVIEW')}
+                                variant="ghost"
+                                className="text-xs py-1 px-2 border border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                                disabled={isActioning}
+                              >
+                                Review
+                              </Button>
+                            )}
+                            {(isOpen || isUnderReview) && (
+                              <>
+                                <Button
+                                  onClick={() => handleUpdateDispute(d.id, 'RESOLVED')}
+                                  variant="success"
+                                  className="text-xs py-1 px-2 font-bold"
+                                  disabled={isActioning}
+                                >
+                                  Resolve
+                                </Button>
+                                <Button
+                                  onClick={() => handleUpdateDispute(d.id, 'REJECTED')}
+                                  variant="danger"
+                                  className="text-xs py-1 px-2 font-bold"
+                                  disabled={isActioning}
+                                >
+                                  Reject
+                                </Button>
+                              </>
+                            )}
+                            {(isResolved || isRejected) && (
+                              <span className="text-xs text-zinc-500 font-medium">
+                                Closed by {d.resolvedBy?.name || 'Admin'}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* TAB 4: Processing Queue review */}
+      {activeTab === 'processing' && (
+        <Card className="border border-zinc-900 bg-zinc-950">
+          <CardHeader className="border-b border-zinc-900/50 pb-4">
+            <CardTitle className="text-base font-bold">Processing Transfers Queue</CardTitle>
+            <CardDescription className="text-xs">Approve or reject simulated PROCESSING state transfers</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {processingLoading ? (
+              <div className="py-24 flex justify-center items-center">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+              </div>
+            ) : !processingTransfers || processingTransfers.length === 0 ? (
+              <div className="py-24 text-center text-zinc-500 text-sm">
+                No processing transfers in queue.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Created Date</TableHead>
+                    <TableHead>Sender Profile</TableHead>
+                    <TableHead>Reference ID</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {processingTransfers.map((t: any) => {
+                    const isActioning = actioningId === t.id;
+
+                    return (
+                      <TableRow key={t.id}>
+                        <TableCell className="text-xs text-zinc-500">
+                          {new Date(t.createdAt).toLocaleDateString('en-IN', {
+                            day: '2-digit', month: 'short', year: 'numeric',
+                            hour: '2-digit', minute: '2-digit'
+                          })}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-zinc-300">{t.user?.name || 'N/A'}</span>
+                            <span className="text-zinc-500 text-[10px]">{t.user?.email || 'N/A'}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs font-bold text-zinc-400">
+                          {t.referenceId}
+                        </TableCell>
+                        <TableCell className="font-bold text-zinc-200">
+                          ₹{t.amount.toFixed(2)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="warning">
+                            {t.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1.5">
+                            <Button
+                              onClick={() => {
+                                if (confirm(`Approve transfer of ₹${t.amount.toFixed(2)} for sender ${t.user?.name}?`)) {
+                                  approveProcessingMutation.mutate(t.id);
+                                }
+                              }}
+                              variant="success"
+                              className="text-xs py-1 px-3 font-bold"
+                              isLoading={isActioning}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              onClick={() => {
+                                if (confirm(`Reject and fail transfer of ₹${t.amount.toFixed(2)} for sender ${t.user?.name}?`)) {
+                                  rejectProcessingMutation.mutate(t.id);
+                                }
+                              }}
+                              variant="danger"
+                              className="text-xs py-1 px-3 font-bold"
+                              isLoading={isActioning}
+                            >
+                              Reject
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

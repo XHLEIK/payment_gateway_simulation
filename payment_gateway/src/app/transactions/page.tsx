@@ -32,7 +32,8 @@ import {
   X,
   RefreshCw,
   ArrowDownLeft,
-  ArrowUpRight
+  ArrowUpRight,
+  Check
 } from 'lucide-react';
 
 export default function TransactionsPage() {
@@ -51,6 +52,64 @@ export default function TransactionsPage() {
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
   const [showFilters, setShowFilters] = useState(false);
+
+  // Reversal Request state
+  const [activeTxnForReversal, setActiveTxnForReversal] = useState<any | null>(null);
+  const [reversalReason, setReversalReason] = useState('');
+  const [reversalLoading, setReversalLoading] = useState(false);
+  const [reversalError, setReversalError] = useState('');
+  const [reversalSuccess, setReversalSuccess] = useState(false);
+
+  // Dispute Filing state
+  const [activeTxnForDispute, setActiveTxnForDispute] = useState<any | null>(null);
+  const [disputeReason, setDisputeReason] = useState('');
+  const [disputeEvidence, setDisputeEvidence] = useState('');
+  const [disputeLoading, setDisputeLoading] = useState(false);
+  const [disputeError, setDisputeError] = useState('');
+  const [disputeSuccess, setDisputeSuccess] = useState(false);
+
+  const handleRequestReversal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeTxnForReversal) return;
+    setReversalError('');
+    setReversalSuccess(false);
+    setReversalLoading(true);
+    try {
+      await api.post(`/transactions/${activeTxnForReversal.id}/request-reversal`, {
+        reason: reversalReason
+      });
+      setReversalSuccess(true);
+      setReversalReason('');
+      refetch();
+    } catch (err: any) {
+      setReversalError(err.response?.data?.message || 'Failed to submit reversal request');
+    } finally {
+      setReversalLoading(false);
+    }
+  };
+
+  const handleFileDispute = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeTxnForDispute) return;
+    setDisputeError('');
+    setDisputeSuccess(false);
+    setDisputeLoading(true);
+    try {
+      await api.post('/disputes', {
+        transactionId: activeTxnForDispute.id,
+        reason: disputeReason,
+        evidence: disputeEvidence || undefined
+      });
+      setDisputeSuccess(true);
+      setDisputeReason('');
+      setDisputeEvidence('');
+      refetch();
+    } catch (err: any) {
+      setDisputeError(err.response?.data?.message || 'Failed to file dispute');
+    } finally {
+      setDisputeLoading(false);
+    }
+  };
 
   // 1. Fetch transactions based on filter parameters
   const { data, isLoading, refetch, isFetching } = useQuery({
@@ -275,6 +334,7 @@ export default function TransactionsPage() {
                     <TableHead className="cursor-pointer select-none hover:text-zinc-200 text-right" onClick={() => handleSort('status')}>
                       Status {sortBy === 'status' && (sortOrder === 'ASC' ? ' ▲' : ' ▼')}
                     </TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -329,6 +389,39 @@ export default function TransactionsPage() {
                             {tx.status}
                           </Badge>
                         </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1.5">
+                            {tx.type === 'TRANSFER' && tx.status === 'SUCCESS' && tx.referenceId.startsWith('TXN-SND-') && (
+                              <Button
+                                onClick={() => {
+                                  setActiveTxnForReversal(tx);
+                                  setReversalReason('');
+                                  setReversalError('');
+                                  setReversalSuccess(false);
+                                }}
+                                variant="secondary"
+                                className="text-[10px] px-2.5 py-1 h-7 font-bold shrink-0 text-amber-500 hover:text-amber-400 border border-zinc-800 hover:bg-zinc-900"
+                              >
+                                Rollback
+                              </Button>
+                            )}
+                            {tx.status !== 'FAILED' && (
+                              <Button
+                                onClick={() => {
+                                  setActiveTxnForDispute(tx);
+                                  setDisputeReason('');
+                                  setDisputeEvidence('');
+                                  setDisputeError('');
+                                  setDisputeSuccess(false);
+                                }}
+                                variant="ghost"
+                                className="text-[10px] px-2.5 py-1 h-7 font-bold border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 shrink-0"
+                              >
+                                Dispute
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -368,6 +461,159 @@ export default function TransactionsPage() {
           </CardHeader>
         )}
       </Card>
+
+      {/* REVERSAL REQUEST MODAL */}
+      {activeTxnForReversal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="text-xs font-bold text-zinc-100 uppercase tracking-wider">Request P2P Rollback</h4>
+              <button 
+                onClick={() => setActiveTxnForReversal(null)} 
+                className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            
+            {reversalSuccess ? (
+              <div className="text-center py-4">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 mb-3">
+                  <Check className="h-6 w-6" />
+                </div>
+                <h5 className="text-sm font-bold text-emerald-400 mb-1">Reversal Requested!</h5>
+                <p className="text-xs text-zinc-400 px-2 leading-relaxed">
+                  Your rollback claim for transfer {activeTxnForReversal.referenceId} has been filed. Admin approval is required.
+                </p>
+                <Button onClick={() => setActiveTxnForReversal(null)} variant="success" className="w-full mt-4 font-bold text-xs">
+                  Done
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleRequestReversal} className="flex flex-col gap-4">
+                <div className="text-center bg-zinc-900/40 border border-zinc-900 rounded-lg p-3">
+                  <p className="text-xs text-zinc-400 font-medium">Reversing Transfer: <strong>{activeTxnForReversal.referenceId}</strong></p>
+                  <p className="text-lg font-black text-zinc-100 mt-1">₹{activeTxnForReversal.amount.toFixed(2)}</p>
+                </div>
+
+                {reversalError && (
+                  <div className="rounded-lg bg-red-900/10 border border-red-500/20 p-2.5 text-xs text-red-400">
+                    {reversalError}
+                  </div>
+                )}
+
+                <Input
+                  label="Reason for Rollback"
+                  placeholder="e.g., Mistaken amount, incorrect payee..."
+                  value={reversalReason}
+                  onChange={(e) => setReversalReason(e.target.value)}
+                  required
+                  autoFocus
+                />
+
+                <div className="flex gap-2">
+                  <Button 
+                    type="button" 
+                    onClick={() => setActiveTxnForReversal(null)} 
+                    variant="secondary" 
+                    className="flex-1 text-xs py-1.5 font-bold"
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    variant="primary" 
+                    className="flex-1 text-xs py-1.5 font-bold" 
+                    isLoading={reversalLoading}
+                  >
+                    Submit Request
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* DISPUTE FILING MODAL */}
+      {activeTxnForDispute && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="text-xs font-bold text-zinc-100 uppercase tracking-wider">File Transaction Dispute</h4>
+              <button 
+                onClick={() => setActiveTxnForDispute(null)} 
+                className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            
+            {disputeSuccess ? (
+              <div className="text-center py-4">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 mb-3">
+                  <Check className="h-6 w-6" />
+                </div>
+                <h5 className="text-sm font-bold text-emerald-400 mb-1">Dispute Filed</h5>
+                <p className="text-xs text-zinc-400 px-2 leading-relaxed">
+                  Your dispute on transaction {activeTxnForDispute.referenceId} has been successfully filed. Support admins will review it.
+                </p>
+                <Button onClick={() => setActiveTxnForDispute(null)} variant="success" className="w-full mt-4 font-bold text-xs">
+                  Close
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleFileDispute} className="flex flex-col gap-4">
+                <div className="text-center bg-zinc-900/40 border border-zinc-900 rounded-lg p-3">
+                  <p className="text-xs text-zinc-400 font-medium">Disputing Transaction: <strong>{activeTxnForDispute.referenceId}</strong></p>
+                  <p className="text-lg font-black text-zinc-100 mt-1">₹{activeTxnForDispute.amount.toFixed(2)}</p>
+                </div>
+
+                {disputeError && (
+                  <div className="rounded-lg bg-red-900/10 border border-red-500/20 p-2.5 text-xs text-red-400">
+                    {disputeError}
+                  </div>
+                )}
+
+                <Input
+                  label="Dispute Reason"
+                  placeholder="Describe why you are disputing this charge..."
+                  value={disputeReason}
+                  onChange={(e) => setDisputeReason(e.target.value)}
+                  required
+                  autoFocus
+                />
+
+                <Input
+                  label="Supporting Evidence (Optional)"
+                  placeholder="e.g. screenshot URLs, transaction codes..."
+                  value={disputeEvidence}
+                  onChange={(e) => setDisputeEvidence(e.target.value)}
+                />
+
+                <div className="flex gap-2">
+                  <Button 
+                    type="button" 
+                    onClick={() => setActiveTxnForDispute(null)} 
+                    variant="secondary" 
+                    className="flex-1 text-xs py-1.5 font-bold"
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    variant="primary" 
+                    className="flex-1 text-xs py-1.5 font-bold" 
+                    isLoading={disputeLoading}
+                  >
+                    File Dispute
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </LayoutShell>
   );
 }

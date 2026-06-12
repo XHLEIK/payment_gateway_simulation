@@ -10,6 +10,8 @@ import { Repository, DataSource, EntityManager } from 'typeorm';
 import { Refund, RefundStatus } from './entities/refund.entity';
 import { TransactionsService } from '../transactions/transactions.service';
 import { TransactionStatus } from '../transactions/entities/transaction.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/entities/notification.entity';
 
 @Injectable()
 export class RefundsService {
@@ -18,6 +20,7 @@ export class RefundsService {
     private readonly refundRepository: Repository<Refund>,
     private readonly transactionsService: TransactionsService,
     private readonly dataSource: DataSource,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // 1. Request a refund (Initiates a PENDING refund)
@@ -98,7 +101,18 @@ export class RefundsService {
       refund.status = RefundStatus.APPROVED;
       refund.approvedById = adminId;
 
-      return refundRepo.save(refund);
+      const saved = await refundRepo.save(refund);
+
+      // Fire notification to transaction owner
+      await this.notificationsService.create(
+        refund.transaction.userId,
+        NotificationType.REFUND_APPROVED,
+        'Refund Approved',
+        `Your refund of ₹${refund.amount.toFixed(2)} for transaction ${refund.transaction.referenceId} has been approved.`,
+        { refundId: refund.id, transactionId: refund.transactionId },
+      );
+
+      return saved;
     });
   }
 
@@ -116,7 +130,23 @@ export class RefundsService {
     refund.status = RefundStatus.REJECTED;
     refund.approvedById = adminId;
 
-    return this.refundRepository.save(refund);
+    const saved = await this.refundRepository.save(refund);
+
+    // Fire notification to transaction owner
+    try {
+      const txn = await this.transactionsService.findOne(refund.transactionId);
+      await this.notificationsService.create(
+        txn.userId,
+        NotificationType.REFUND_REJECTED,
+        'Refund Rejected',
+        `Your refund request of ₹${refund.amount.toFixed(2)} for transaction ${txn.referenceId} has been rejected.`,
+        { refundId: refund.id, transactionId: refund.transactionId },
+      );
+    } catch (err) {
+      // Non-critical
+    }
+
+    return saved;
   }
 
   // List all refunds

@@ -27,6 +27,8 @@ export enum TransactionStatus {
   SUCCESS = 'SUCCESS',
   FAILED = 'FAILED',
   REFUNDED = 'REFUNDED',
+  REVERSAL_PENDING = 'REVERSAL_PENDING',
+  REVERSED = 'REVERSED',
 }
 
 @Entity('transactions')
@@ -85,6 +87,12 @@ export class Transaction {
     },
   })
   balanceAfter: number | null;
+
+  @Column({ name: 'linked_transaction_id', type: 'varchar', nullable: true })
+  linkedTransactionId: string | null;
+
+  @Column({ name: 'reversal_reason', type: 'varchar', nullable: true })
+  reversalReason: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt: Date;
