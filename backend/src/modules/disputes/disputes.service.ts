@@ -10,6 +10,9 @@ import { Dispute, DisputeStatus } from './entities/dispute.entity';
 import { TransactionsService } from '../transactions/transactions.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
+import { Transaction, TransactionStatus, TransactionType } from '../transactions/entities/transaction.entity';
+import { TransactionAudit } from '../transactions/entities/transaction-audit.entity';
+import { Wallet } from '../wallets/entities/wallet.entity';
 
 @Injectable()
 export class DisputesService {
@@ -145,6 +148,123 @@ export class DisputesService {
     dispute.resolvedById = adminId;
     if (adminNotes) {
       dispute.adminNotes = adminNotes;
+    }
+
+    if (toStatus === DisputeStatus.RESOLVED) {
+      const transaction = dispute.transaction;
+      if (!transaction) {
+        throw new NotFoundException('Transaction associated with dispute not found');
+      }
+
+      if (transaction.status === TransactionStatus.REVERSED || transaction.status === TransactionStatus.REFUNDED) {
+        throw new BadRequestException('Transaction is already reversed or refunded');
+      }
+
+      if (transaction.type === TransactionType.TRANSFER || transaction.type === TransactionType.TRANSFER_CREDIT) {
+        await this.disputeRepository.manager.transaction('SERIALIZABLE', async (manager) => {
+          const txnRepo = manager.getRepository(Transaction);
+          const walletRepo = manager.getRepository(Wallet);
+          const auditRepo = manager.getRepository(TransactionAudit);
+
+          const senderTxn = await txnRepo.findOne({ where: { id: transaction.id } });
+          if (!senderTxn) {
+            throw new NotFoundException('Transaction not found');
+          }
+
+          const receiverTxn = senderTxn.linkedTransactionId
+            ? await txnRepo.findOne({ where: { id: senderTxn.linkedTransactionId } })
+            : await txnRepo.findOne({ where: { requestId: senderTxn.requestId.endsWith('-rcv') ? senderTxn.requestId : senderTxn.requestId + '-rcv' } });
+
+          if (!receiverTxn) {
+            throw new NotFoundException('Linked receiver transaction not found');
+          }
+
+          const senderId = senderTxn.userId;
+          const receiverId = receiverTxn.userId;
+          const amount = senderTxn.amount;
+
+          const sortedUserIds = [senderId, receiverId].sort();
+          const walletA = await walletRepo.findOne({
+            where: { userId: sortedUserIds[0] },
+            lock: { mode: 'pessimistic_write' },
+          });
+          const walletB = await walletRepo.findOne({
+            where: { userId: sortedUserIds[1] },
+            lock: { mode: 'pessimistic_write' },
+          });
+
+          if (!walletA || !walletB) {
+            throw new NotFoundException('One or more wallets not found');
+          }
+
+          const senderWallet = walletA.userId === senderId ? walletA : walletB;
+          const receiverWallet = walletA.userId === receiverId ? walletA : walletB;
+
+          if (receiverWallet.balance < amount) {
+            throw new BadRequestException(
+              `Receiver has insufficient balance (₹${receiverWallet.balance}) for reversal of ₹${amount}`,
+            );
+          }
+
+          receiverWallet.balance = parseFloat((Number(receiverWallet.balance) - amount).toFixed(2));
+          senderWallet.balance = parseFloat((Number(senderWallet.balance) + amount).toFixed(2));
+
+          await walletRepo.save(receiverWallet);
+          await walletRepo.save(senderWallet);
+
+          senderTxn.status = TransactionStatus.REVERSED;
+          senderTxn.balanceAfter = senderWallet.balance;
+          receiverTxn.status = TransactionStatus.REVERSED;
+          receiverTxn.balanceAfter = receiverWallet.balance;
+
+          await txnRepo.save(senderTxn);
+          await txnRepo.save(receiverTxn);
+
+          for (const txn of [senderTxn, receiverTxn]) {
+            const audit = auditRepo.create({
+              transactionId: txn.id,
+              fromStatus: TransactionStatus.SUCCESS,
+              toStatus: TransactionStatus.REVERSED,
+              actor: `admin:${adminId}`,
+            } as any);
+            await auditRepo.save(audit);
+          }
+        });
+      } else if (transaction.type === TransactionType.DEBIT || transaction.type === TransactionType.PAYMENT) {
+        await this.disputeRepository.manager.transaction('SERIALIZABLE', async (manager) => {
+          const txnRepo = manager.getRepository(Transaction);
+          const walletRepo = manager.getRepository(Wallet);
+          const auditRepo = manager.getRepository(TransactionAudit);
+
+          const txn = await txnRepo.findOne({ where: { id: transaction.id } });
+          if (!txn) {
+            throw new NotFoundException('Transaction not found');
+          }
+
+          const wallet = await walletRepo.findOne({
+            where: { userId: txn.userId },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (!wallet) {
+            throw new NotFoundException('Wallet not found');
+          }
+
+          wallet.balance = parseFloat((Number(wallet.balance) + txn.amount).toFixed(2));
+          await walletRepo.save(wallet);
+
+          txn.status = TransactionStatus.REFUNDED;
+          txn.balanceAfter = wallet.balance;
+          await txnRepo.save(txn);
+
+          const audit = auditRepo.create({
+            transactionId: txn.id,
+            fromStatus: TransactionStatus.SUCCESS,
+            toStatus: TransactionStatus.REFUNDED,
+            actor: `admin:${adminId}`,
+          } as any);
+          await auditRepo.save(audit);
+        });
+      }
     }
 
     const updated = await this.disputeRepository.save(dispute);

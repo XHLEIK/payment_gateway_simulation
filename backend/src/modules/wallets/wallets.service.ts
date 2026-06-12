@@ -285,7 +285,7 @@ export class WalletsService {
           referenceId: refIdRecipient,
           userId: recipient.id,
           amount,
-          type: TransactionType.TRANSFER,
+          type: TransactionType.TRANSFER_CREDIT,
           status: TransactionStatus.FAILED,
           requestId: `${requestId}-rcv`,
           linkedTransactionId: savedSenderTxn.id,
@@ -331,7 +331,7 @@ export class WalletsService {
           referenceId: refIdRecipient,
           userId: recipient.id,
           amount,
-          type: TransactionType.TRANSFER,
+          type: TransactionType.TRANSFER_CREDIT,
           status: TransactionStatus.PROCESSING,
           requestId: `${requestId}-rcv`,
           linkedTransactionId: savedSenderTxn.id,
@@ -411,7 +411,7 @@ export class WalletsService {
         referenceId: refIdRecipient,
         userId: recipient.id,
         amount,
-        type: TransactionType.TRANSFER,
+        type: TransactionType.TRANSFER_CREDIT,
         status: TransactionStatus.SUCCESS,
         requestId: `${requestId}-rcv`,
         balanceAfter: recipientWallet.balance,
@@ -603,24 +603,28 @@ export class WalletsService {
       order: { createdAt: 'DESC' },
     });
 
-    return txs.map((tx) => {
-      let typeLabel = tx.type;
-      if (tx.type === TransactionType.TRANSFER) {
-        typeLabel = tx.referenceId.startsWith('TXN-SND-') 
-          ? 'TRANSFER_OUT' as any 
-          : 'TRANSFER_IN' as any;
-      }
-      return {
-        id: tx.id,
-        referenceId: tx.referenceId,
-        type: typeLabel,
-        amount: tx.amount,
-        balanceAfter: tx.balanceAfter,
-        status: tx.status,
-        reversalReason: tx.reversalReason,
-        linkedTransactionId: tx.linkedTransactionId,
-        createdAt: tx.createdAt,
-      };
-    });
+    return txs
+      .filter((tx) => !(tx.type === TransactionType.TRANSFER_CREDIT && tx.status !== TransactionStatus.SUCCESS))
+      .map((tx) => {
+        let typeLabel = tx.type;
+        if (tx.type === TransactionType.TRANSFER) {
+          typeLabel = tx.referenceId.startsWith('TXN-SND-') 
+            ? 'TRANSFER_OUT' as any 
+            : 'TRANSFER_IN' as any;
+        } else if (tx.type === TransactionType.TRANSFER_CREDIT) {
+          typeLabel = 'TRANSFER_IN' as any;
+        }
+        return {
+          id: tx.id,
+          referenceId: tx.referenceId,
+          type: typeLabel,
+          amount: tx.amount,
+          balanceAfter: tx.balanceAfter,
+          status: tx.status,
+          reversalReason: tx.reversalReason,
+          linkedTransactionId: tx.linkedTransactionId,
+          createdAt: tx.createdAt,
+        };
+      });
   }
 }

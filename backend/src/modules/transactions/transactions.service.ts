@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager } from 'typeorm';
+import { Repository, DataSource, EntityManager, Brackets } from 'typeorm';
 import { Transaction, TransactionStatus, TransactionType } from './entities/transaction.entity';
 import { TransactionAudit } from './entities/transaction-audit.entity';
 import { WalletsService } from '../wallets/wallets.service';
@@ -456,6 +456,12 @@ export class TransactionsService {
 
     if (userId) {
       qb.andWhere('txn.userId = :userId', { userId });
+      qb.andWhere(
+        new Brackets((innerQb) => {
+          innerQb.where('txn.type != :tcType', { tcType: TransactionType.TRANSFER_CREDIT })
+            .orWhere('txn.status = :successStatus', { successStatus: TransactionStatus.SUCCESS });
+        }),
+      );
     }
 
     if (status) {

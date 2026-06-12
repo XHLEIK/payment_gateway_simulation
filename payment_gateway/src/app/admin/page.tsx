@@ -32,7 +32,7 @@ import {
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'users' | 'refunds' | 'disputes' | 'processing'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'refunds' | 'disputes' | 'processing' | 'reversals'>('users');
   const [actioningId, setActioningId] = useState<string | null>(null);
 
   // 1. Fetch Users List
@@ -73,6 +73,16 @@ export default function AdminPage() {
       return res.data;
     },
     enabled: activeTab === 'processing',
+  });
+
+  // 4b. Fetch Pending Reversals List
+  const { data: reversals, isLoading: reversalsLoading } = useQuery({
+    queryKey: ['admin-reversals'],
+    queryFn: async () => {
+      const res = await api.get('/transactions/pending-reversals');
+      return res.data;
+    },
+    enabled: activeTab === 'reversals',
   });
 
   // 5. Approve Refund Mutation
@@ -121,6 +131,9 @@ export default function AdminPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-disputes'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['recent-transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['wallet-balance'] });
       setActioningId(null);
     },
     onError: (err: any) => {
@@ -164,6 +177,57 @@ export default function AdminPage() {
       setActioningId(null);
     },
   });
+
+  // 10. Approve Reversal Mutation
+  const approveReversalMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setActioningId(id);
+      const res = await api.post(`/transactions/${id}/approve-reversal`);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-reversals'] });
+      queryClient.invalidateQueries({ queryKey: ['wallet-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['recent-transactions'] });
+      setActioningId(null);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.message || err.message || 'Approval failed');
+      setActioningId(null);
+    },
+  });
+
+  // 11. Reject Reversal Mutation
+  const rejectReversalMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setActioningId(id);
+      const res = await api.post(`/transactions/${id}/reject-reversal`);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-reversals'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['recent-transactions'] });
+      setActioningId(null);
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.message || err.message || 'Rejection failed');
+      setActioningId(null);
+    },
+  });
+
+  const handleApproveReversal = (id: string) => {
+    if (confirm('Are you sure you want to approve this transfer reversal? The amount will be debited from the receiver and credited back to the sender.')) {
+      approveReversalMutation.mutate(id);
+    }
+  };
+
+  const handleRejectReversal = (id: string) => {
+    if (confirm('Are you sure you want to reject this reversal request?')) {
+      rejectReversalMutation.mutate(id);
+    }
+  };
 
   const handleEditDailyLimit = async (userId: string, userName: string) => {
     const limitInput = prompt(`Configure Daily transaction limit for ${userName} (INR):`, "50000");
@@ -262,6 +326,18 @@ export default function AdminPage() {
         >
           <Clock className="h-4.5 w-4.5" />
           Processing Queue
+        </button>
+
+        <button
+          onClick={() => setActiveTab('reversals')}
+          className={`flex items-center gap-2 pb-3.5 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+            activeTab === 'reversals'
+              ? 'border-indigo-500 text-indigo-400'
+              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <Undo2 className="h-4.5 w-4.5" />
+          Reversal Requests
         </button>
       </div>
 
@@ -631,6 +707,99 @@ export default function AdminPage() {
                               isLoading={isActioning}
                             >
                               Reject
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {/* TAB 5: Reversal Requests */}
+      {activeTab === 'reversals' && (
+        <Card className="border border-zinc-900 bg-zinc-950">
+          <CardHeader className="border-b border-zinc-900/50 pb-4">
+            <CardTitle className="text-base font-bold">P2P Transfer Reversal Requests</CardTitle>
+            <CardDescription className="text-xs">Review and action rollback requests filed by senders on P2P transfers</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {reversalsLoading ? (
+              <div className="py-24 flex justify-center items-center">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+              </div>
+            ) : !reversals || reversals.length === 0 ? (
+              <div className="py-24 text-center text-zinc-500 text-sm">
+                No pending reversal requests.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Requested Date</TableHead>
+                    <TableHead>Sender Profile</TableHead>
+                    <TableHead>Reference ID</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Reason for Rollback</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reversals.map((r: any) => {
+                    const isActioning = actioningId === r.id;
+                    return (
+                      <TableRow key={r.id}>
+                        <TableCell className="text-xs text-zinc-500">
+                          {new Date(r.createdAt).toLocaleDateString('en-IN', {
+                            day: '2-digit', month: 'short', year: 'numeric',
+                            hour: '2-digit', minute: '2-digit'
+                          })}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-zinc-300">{r.user?.name || 'N/A'}</span>
+                            <span className="text-zinc-500 text-[10px]">{r.user?.email || 'N/A'}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs font-bold text-zinc-400">
+                          {r.referenceId}
+                        </TableCell>
+                        <TableCell className="font-bold text-zinc-200">
+                          ₹{Number(r.amount).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-xs text-zinc-300 max-w-[200px] truncate" title={r.reversalReason}>
+                          {r.reversalReason || 'No reason provided'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="warning">
+                            {r.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1.5">
+                            <Button
+                              onClick={() => handleApproveReversal(r.id)}
+                              variant="success"
+                              className="p-1.5 rounded-lg"
+                              title="Approve Reversal"
+                              disabled={isActioning}
+                              isLoading={isActioning}
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              onClick={() => handleRejectReversal(r.id)}
+                              variant="danger"
+                              className="p-1.5 rounded-lg"
+                              title="Reject Reversal"
+                              disabled={isActioning}
+                              isLoading={isActioning}
+                            >
+                              <X className="h-4 w-4" />
                             </Button>
                           </div>
                         </TableCell>

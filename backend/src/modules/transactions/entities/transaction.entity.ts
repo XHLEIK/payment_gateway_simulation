@@ -19,6 +19,7 @@ export enum TransactionType {
   PAYMENT = 'PAYMENT',
   REFUND = 'REFUND',
   TRANSFER = 'TRANSFER',
+  TRANSFER_CREDIT = 'TRANSFER_CREDIT',
 }
 
 export enum TransactionStatus {

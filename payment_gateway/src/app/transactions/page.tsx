@@ -253,6 +253,8 @@ export default function TransactionsPage() {
                 { value: '', label: 'All Types' },
                 { value: 'CREDIT', label: 'CREDIT (Loads)' },
                 { value: 'DEBIT', label: 'DEBIT (Spends)' },
+                { value: 'TRANSFER', label: 'TRANSFER (Out)' },
+                { value: 'TRANSFER_CREDIT', label: 'TRANSFER (In)' },
               ]}
               value={type}
               onChange={(e) => { setType(e.target.value); setPage(1); }}
@@ -339,7 +341,7 @@ export default function TransactionsPage() {
                 </TableHeader>
                 <TableBody>
                   {txs.map((tx: any) => {
-                    const isCredit = tx.type === 'CREDIT';
+                    const isCredit = tx.type === 'CREDIT' || tx.type === 'TRANSFER_CREDIT';
                     const isSuccess = tx.status === 'SUCCESS';
                     const isFailed = tx.status === 'FAILED';
                     const isRefunded = tx.status === 'REFUNDED';
@@ -376,7 +378,7 @@ export default function TransactionsPage() {
                             isCredit ? 'text-emerald-400' : 'text-zinc-400'
                           }`}>
                             {isCredit ? <ArrowDownLeft className="h-3 w-3" /> : <ArrowUpRight className="h-3 w-3" />}
-                            {tx.type}
+                            {tx.type === 'TRANSFER_CREDIT' ? 'TRANSFER CREDIT' : tx.type}
                           </span>
                         </TableCell>
                         <TableCell className="font-black text-sm text-zinc-100">
