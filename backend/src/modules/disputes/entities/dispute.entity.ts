@@ -48,7 +48,7 @@ export class Dispute {
   @Column({ name: 'admin_notes', type: 'text', nullable: true })
   adminNotes: string | null;
 
-  @Column({ name: 'resolved_by', type: 'varchar', nullable: true })
+  @Column({ name: 'resolved_by_id', type: 'varchar', nullable: true })
   resolvedById: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
@@ -66,6 +66,6 @@ export class Dispute {
   user: User;
 
   @ManyToOne(() => User)
-  @JoinColumn({ name: 'resolved_by' })
+  @JoinColumn({ name: 'resolved_by_id' })
   resolvedBy: User;
 }
