@@ -26,17 +26,21 @@ import {
   X, 
   Loader2, 
   AlertCircle,
-  Clock,
-  UserCheck
+  Clock
 } from 'lucide-react';
 
+// Administration Control Panel for portal admins.
+// Lets admins modify candidate spend limits, approve/reject refunds, review disputes, 
+// and manage/reconcile pending and processing money transfers.
 export default function AdminPage() {
   const queryClient = useQueryClient();
+  // Manage navigation across different admin views
   const [activeTab, setActiveTab] = useState<'users' | 'refunds' | 'disputes' | 'processing' | 'reversals'>('users');
+  // Store ID of transaction currently undergoing approval/rejection (disables double-clicks)
   const [actioningId, setActioningId] = useState<string | null>(null);
 
-  // 1. Fetch Users List
-  const { data: users, isLoading: usersLoading, refetch: refetchUsers } = useQuery({
+  // 1. Fetch all registered users in the system (Admins can view and edit limits)
+  const { data: users, isLoading: usersLoading } = useQuery({
     queryKey: ['admin-users'],
     queryFn: async () => {
       const res = await api.get('/users');
@@ -45,8 +49,8 @@ export default function AdminPage() {
     enabled: activeTab === 'users',
   });
 
-  // 2. Fetch Refunds List
-  const { data: refunds, isLoading: refundsLoading, refetch: refetchRefunds } = useQuery({
+  // 2. Fetch refund claims submitted by candidates
+  const { data: refunds, isLoading: refundsLoading } = useQuery({
     queryKey: ['admin-refunds'],
     queryFn: async () => {
       const res = await api.get('/refunds');
@@ -55,7 +59,7 @@ export default function AdminPage() {
     enabled: activeTab === 'refunds',
   });
 
-  // 3. Fetch Disputes List
+  // 3. Fetch active disputes filed on completed payments
   const { data: disputes, isLoading: disputesLoading } = useQuery({
     queryKey: ['admin-disputes'],
     queryFn: async () => {
@@ -65,7 +69,7 @@ export default function AdminPage() {
     enabled: activeTab === 'disputes',
   });
 
-  // 4. Fetch Processing Transfers List
+  // 4. Fetch transactions stuck in the simulated PROCESSING queue (awaiting admin check)
   const { data: processingTransfers, isLoading: processingLoading } = useQuery({
     queryKey: ['admin-processing-transfers'],
     queryFn: async () => {
@@ -75,7 +79,7 @@ export default function AdminPage() {
     enabled: activeTab === 'processing',
   });
 
-  // 4b. Fetch Pending Reversals List
+  // 5. Fetch transactions where candidates requested a transfer rollback (reversal requests)
   const { data: reversals, isLoading: reversalsLoading } = useQuery({
     queryKey: ['admin-reversals'],
     queryFn: async () => {
@@ -85,7 +89,9 @@ export default function AdminPage() {
     enabled: activeTab === 'reversals',
   });
 
-  // 5. Approve Refund Mutation
+  // --- MUTATION HOOKS (Trigger backend action and invalidate React Query cache to trigger refetch) ---
+
+  // Approve a candidate's refund claim (credits wallet balance back)
   const approveMutation = useMutation({
     mutationFn: async (id: string) => {
       setActioningId(id);
@@ -105,7 +111,7 @@ export default function AdminPage() {
     },
   });
 
-  // 6. Reject Refund Mutation
+  // Deny/reject a refund claim
   const rejectMutation = useMutation({
     mutationFn: async (id: string) => {
       setActioningId(id);
@@ -122,7 +128,7 @@ export default function AdminPage() {
     },
   });
 
-  // 7. Update Dispute Status Mutation
+  // Resolve or reject open payment disputes
   const updateDisputeStatusMutation = useMutation({
     mutationFn: async ({ id, status, adminNotes }: { id: string; status: string; adminNotes?: string }) => {
       setActioningId(id);
@@ -142,7 +148,7 @@ export default function AdminPage() {
     },
   });
 
-  // 8. Approve Processing Transfer Mutation
+  // Approve a direct transfer that was flagged in the PROCESSING queue
   const approveProcessingMutation = useMutation({
     mutationFn: async (id: string) => {
       setActioningId(id);
@@ -161,7 +167,7 @@ export default function AdminPage() {
     },
   });
 
-  // 9. Reject Processing Transfer Mutation
+  // Reject a direct transfer stuck in the PROCESSING queue
   const rejectProcessingMutation = useMutation({
     mutationFn: async (id: string) => {
       setActioningId(id);
@@ -178,7 +184,7 @@ export default function AdminPage() {
     },
   });
 
-  // 10. Approve Reversal Mutation
+  // Approve a pending P2P reversal request (takes funds from receiver, returns to sender)
   const approveReversalMutation = useMutation({
     mutationFn: async (id: string) => {
       setActioningId(id);
@@ -198,7 +204,7 @@ export default function AdminPage() {
     },
   });
 
-  // 11. Reject Reversal Mutation
+  // Deny/reject a pending P2P reversal request
   const rejectReversalMutation = useMutation({
     mutationFn: async (id: string) => {
       setActioningId(id);
@@ -217,6 +223,8 @@ export default function AdminPage() {
     },
   });
 
+  // --- BUTTON CLICKS RESOLVERS ---
+
   const handleApproveReversal = (id: string) => {
     if (confirm('Are you sure you want to approve this transfer reversal? The amount will be debited from the receiver and credited back to the sender.')) {
       approveReversalMutation.mutate(id);
@@ -229,6 +237,7 @@ export default function AdminPage() {
     }
   };
 
+  // Modify daily transaction spending limit config
   const handleEditDailyLimit = async (userId: string, userName: string) => {
     const limitInput = prompt(`Configure Daily transaction limit for ${userName} (INR):`, "50000");
     if (limitInput === null) return;
@@ -247,11 +256,12 @@ export default function AdminPage() {
     }
   };
 
+  // Resolve disputes (requires notes if resolved/denied)
   const handleUpdateDispute = (id: string, status: string) => {
     let notes: string | null = "";
     if (status === 'RESOLVED' || status === 'REJECTED') {
       notes = prompt(`Provide admin resolution notes for this dispute:`);
-      if (notes === null) return; // user cancelled
+      if (notes === null) return;
     }
     updateDisputeStatusMutation.mutate({ id, status, adminNotes: notes || undefined });
   };
@@ -270,7 +280,7 @@ export default function AdminPage() {
 
   return (
     <LayoutShell>
-      {/* Title block */}
+      {/* Page header */}
       <div className="mb-8">
         <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Portal Administration Control</h2>
         <p className="text-sm text-zinc-500">
@@ -278,8 +288,8 @@ export default function AdminPage() {
         </p>
       </div>
 
-      {/* Tabs Selector */}
-      <div className="flex border-b border-zinc-900 mb-8 gap-4">
+      {/* Tabs navigation panel */}
+      <div className="flex border-b border-zinc-900 mb-8 gap-4 overflow-x-auto whitespace-nowrap scrollbar-none">
         <button
           onClick={() => setActiveTab('users')}
           className={`flex items-center gap-2 pb-3.5 text-sm font-bold border-b-2 transition-all cursor-pointer ${
@@ -341,7 +351,7 @@ export default function AdminPage() {
         </button>
       </div>
 
-      {/* TAB 1: User Directory */}
+      {/* Tab content view: Users directory list */}
       {activeTab === 'users' && (
         <Card className="border border-zinc-900 bg-zinc-950">
           <CardHeader className="border-b border-zinc-900/50 pb-4 flex flex-row items-center justify-between">
@@ -389,7 +399,7 @@ export default function AdminPage() {
                         <Button
                           onClick={() => handleEditDailyLimit(u.id, u.name)}
                           variant="ghost"
-                          className="text-xs py-1 px-2 border border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                          className="text-xs py-1 px-2 border border-zinc-800 text-zinc-400 hover:text-zinc-200 cursor-pointer"
                         >
                           Set Limit
                         </Button>
@@ -403,7 +413,7 @@ export default function AdminPage() {
         </Card>
       )}
 
-      {/* TAB 2: Refund Request review */}
+      {/* Tab content view: Refund Requests list */}
       {activeTab === 'refunds' && (
         <Card className="border border-zinc-900 bg-zinc-950">
           <CardHeader className="border-b border-zinc-900/50 pb-4">
@@ -474,7 +484,7 @@ export default function AdminPage() {
                               <Button
                                 onClick={() => handleApprove(r.id)}
                                 variant="success"
-                                className="p-1.5 rounded-lg"
+                                className="p-1.5 rounded-lg cursor-pointer"
                                 title="Approve Refund"
                                 isLoading={isActioning}
                               >
@@ -483,7 +493,7 @@ export default function AdminPage() {
                               <Button
                                 onClick={() => handleReject(r.id)}
                                 variant="danger"
-                                className="p-1.5 rounded-lg"
+                                className="p-1.5 rounded-lg cursor-pointer"
                                 title="Reject Refund"
                                 isLoading={isActioning}
                               >
@@ -505,7 +515,8 @@ export default function AdminPage() {
           </CardContent>
         </Card>
       )}
-      {/* TAB 3: Disputes review */}
+
+      {/* Tab content view: Transaction disputes */}
       {activeTab === 'disputes' && (
         <Card className="border border-zinc-900 bg-zinc-950">
           <CardHeader className="border-b border-zinc-900/50 pb-4">
@@ -582,7 +593,7 @@ export default function AdminPage() {
                               <Button
                                 onClick={() => handleUpdateDispute(d.id, 'UNDER_REVIEW')}
                                 variant="ghost"
-                                className="text-xs py-1 px-2 border border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                                className="text-xs py-1 px-2 border border-zinc-800 text-zinc-400 hover:text-zinc-200 cursor-pointer"
                                 disabled={isActioning}
                               >
                                 Review
@@ -593,7 +604,7 @@ export default function AdminPage() {
                                 <Button
                                   onClick={() => handleUpdateDispute(d.id, 'RESOLVED')}
                                   variant="success"
-                                  className="text-xs py-1 px-2 font-bold"
+                                  className="text-xs py-1 px-2 font-bold cursor-pointer"
                                   disabled={isActioning}
                                 >
                                   Resolve
@@ -601,7 +612,7 @@ export default function AdminPage() {
                                 <Button
                                   onClick={() => handleUpdateDispute(d.id, 'REJECTED')}
                                   variant="danger"
-                                  className="text-xs py-1 px-2 font-bold"
+                                  className="text-xs py-1 px-2 font-bold cursor-pointer"
                                   disabled={isActioning}
                                 >
                                   Reject
@@ -625,7 +636,7 @@ export default function AdminPage() {
         </Card>
       )}
 
-      {/* TAB 4: Processing Queue review */}
+      {/* Tab content view: Processing queue */}
       {activeTab === 'processing' && (
         <Card className="border border-zinc-900 bg-zinc-950">
           <CardHeader className="border-b border-zinc-900/50 pb-4">
@@ -685,25 +696,25 @@ export default function AdminPage() {
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1.5">
                             <Button
-                              onClick={() => {
-                                if (confirm(`Approve transfer of ₹${t.amount.toFixed(2)} for sender ${t.user?.name}?`)) {
-                                  approveProcessingMutation.mutate(t.id);
-                                }
-                              }}
+                               onClick={() => {
+                                 if (confirm(`Approve transfer of ₹${t.amount.toFixed(2)} for sender ${t.user?.name}?`)) {
+                                   approveProcessingMutation.mutate(t.id);
+                                 }
+                               }}
                               variant="success"
-                              className="text-xs py-1 px-3 font-bold"
+                              className="text-xs py-1 px-3 font-bold cursor-pointer"
                               isLoading={isActioning}
                             >
                               Approve
                             </Button>
                             <Button
-                              onClick={() => {
-                                if (confirm(`Reject and fail transfer of ₹${t.amount.toFixed(2)} for sender ${t.user?.name}?`)) {
-                                  rejectProcessingMutation.mutate(t.id);
-                                }
-                              }}
+                               onClick={() => {
+                                 if (confirm(`Reject and fail transfer of ₹${t.amount.toFixed(2)} for sender ${t.user?.name}?`)) {
+                                   rejectProcessingMutation.mutate(t.id);
+                                 }
+                               }}
                               variant="danger"
-                              className="text-xs py-1 px-3 font-bold"
+                              className="text-xs py-1 px-3 font-bold cursor-pointer"
                               isLoading={isActioning}
                             >
                               Reject
@@ -719,7 +730,8 @@ export default function AdminPage() {
           </CardContent>
         </Card>
       )}
-      {/* TAB 5: Reversal Requests */}
+
+      {/* Tab content view: Reversal requests */}
       {activeTab === 'reversals' && (
         <Card className="border border-zinc-900 bg-zinc-950">
           <CardHeader className="border-b border-zinc-900/50 pb-4">
@@ -784,7 +796,7 @@ export default function AdminPage() {
                             <Button
                               onClick={() => handleApproveReversal(r.id)}
                               variant="success"
-                              className="p-1.5 rounded-lg"
+                              className="p-1.5 rounded-lg cursor-pointer"
                               title="Approve Reversal"
                               disabled={isActioning}
                               isLoading={isActioning}
@@ -794,7 +806,7 @@ export default function AdminPage() {
                             <Button
                               onClick={() => handleRejectReversal(r.id)}
                               variant="danger"
-                              className="p-1.5 rounded-lg"
+                              className="p-1.5 rounded-lg cursor-pointer"
                               title="Reject Reversal"
                               disabled={isActioning}
                               isLoading={isActioning}

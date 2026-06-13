@@ -1,7 +1,16 @@
-/node_modules
+# Ignore compiled JS files from local builds
 /dist
+
+# Ignore local dependencies
+/node_modules
+
+# Local log directory
 /logs
+*.log
+
+# Keep local configuration and database secrets safe
 .env
 .env.*
+
+# OS-specific clutter
 .DS_Store
-*.log

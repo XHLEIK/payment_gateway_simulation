@@ -13,8 +13,7 @@ import {
   Loader2,
   Menu,
   X,
-  Bell,
-  Check
+  Bell
 } from 'lucide-react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -24,6 +23,9 @@ interface LayoutShellProps {
   children: React.ReactNode;
 }
 
+// Global dashboard navigation frame.
+// Renders desktop/mobile sidebar grids, polls push notifications,
+// and runs route guards to redirect unauthenticated or non-admin attempts.
 export default function LayoutShell({ children }: LayoutShellProps) {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const router = useRouter();
@@ -32,20 +34,20 @@ export default function LayoutShell({ children }: LayoutShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [notificationPanelOpen, setNotificationPanelOpen] = React.useState(false);
 
-  // Poll notifications unread count every 15 seconds
+  // Poll notifications count in the background every 15 seconds
   const { data: unreadCountData } = useQuery({
     queryKey: ['notifications-unread-count'],
     queryFn: async () => {
       const res = await api.get('/notifications/unread-count');
       return res.data.count;
     },
-    refetchInterval: 15000,
+    refetchInterval: 15000, // Background poll rate
     enabled: isAuthenticated,
   });
 
   const unreadCount = unreadCountData || 0;
 
-  // Fetch all notifications list
+  // Retrieve notification items when the overlay panel is opened
   const { data: notificationsData, isLoading: notificationsLoading } = useQuery({
     queryKey: ['notifications-list'],
     queryFn: async () => {
@@ -57,6 +59,7 @@ export default function LayoutShell({ children }: LayoutShellProps) {
 
   const notifications = notificationsData || [];
 
+  // Bulk mark all user alerts as read
   const markAllReadMutation = useMutation({
     mutationFn: async () => {
       await api.patch('/notifications/read-all');
@@ -67,6 +70,7 @@ export default function LayoutShell({ children }: LayoutShellProps) {
     },
   });
 
+  // Mark a single notification item as read
   const markSingleReadMutation = useMutation({
     mutationFn: async (id: string) => {
       await api.patch(`/notifications/${id}/read`);
@@ -82,12 +86,13 @@ export default function LayoutShell({ children }: LayoutShellProps) {
     markAllReadMutation.mutate();
   };
 
+  // Click on a notification item to mark read and redirect to the target page
   const handleNotificationClick = (n: any) => {
     if (!n.isRead) {
       markSingleReadMutation.mutate(n.id);
     }
     
-    // Navigate based on type
+    // Redirect user to the corresponding tab/pages based on the message metadata
     if (n.metadata?.transactionId) {
       router.push(`/transactions`);
     } else if (n.metadata?.disputeId) {
@@ -100,31 +105,33 @@ export default function LayoutShell({ children }: LayoutShellProps) {
     setNotificationPanelOpen(false);
   };
 
-  // Auth Guard: redirect to login if unauthenticated
+  // Auth Guard: Force login page redirect if no session exists
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.push('/login');
     }
   }, [isAuthenticated, isLoading, router]);
 
-  // Enforce admin routes security
+  // Security Guard: Prevent non-admin accounts from loading /admin routing folders
   useEffect(() => {
     if (!isLoading && isAuthenticated && user && pathname.startsWith('/admin') && user.role !== 'admin') {
       router.push('/dashboard');
     }
   }, [user, isAuthenticated, isLoading, pathname, router]);
 
+  // Spinner blocker while session verifies
   if (isLoading || !isAuthenticated) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center min-h-screen bg-zinc-950">
         <Loader2 className="h-10 w-10 animate-spin text-indigo-500 mb-4" />
         <p className="text-zinc-400 text-sm font-medium animate-pulse">
-          Securing Regilly Assignment Portal Session...
+          Securing Portal Session...
         </p>
       </div>
     );
   }
 
+  // Master navigation config mapping
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, role: 'all' },
     { name: 'Wallet', path: '/wallet', icon: Wallet, role: 'all' },
@@ -144,7 +151,7 @@ export default function LayoutShell({ children }: LayoutShellProps) {
 
   return (
     <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
-      {/* 1. Header Header */}
+      {/* 1. Header Toolbar */}
       <header className="h-16 border-b border-zinc-900 bg-zinc-950 flex items-center justify-between px-6 shrink-0">
         <div className="flex items-center gap-3">
           <button
@@ -153,24 +160,25 @@ export default function LayoutShell({ children }: LayoutShellProps) {
           >
             {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
+          
+          {/* Header branding referencing Arunachal Pradesh (APPSC) */}
           <div className="flex items-center gap-2">
             <span className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-sm text-white tracking-widest shadow-md">
-              RA
+              AP
             </span>
             <div className="flex flex-col">
               <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest leading-none">
-                Regilly Gateway
+                APPSC Gateway
               </span>
               <span className="text-sm font-extrabold text-zinc-200 tracking-tight">
-                Regilly Assignment Portal
+                Arunachal Pradesh Portal
               </span>
             </div>
           </div>
         </div>
 
-        {/* User profile dropdown trigger */}
         <div className="flex items-center gap-4">
-          {/* Notification Bell */}
+          {/* Notification bell trigger */}
           <div className="relative">
             <button
               onClick={() => setNotificationPanelOpen(!notificationPanelOpen)}
@@ -199,7 +207,7 @@ export default function LayoutShell({ children }: LayoutShellProps) {
       </header>
 
       <div className="flex-1 flex relative overflow-hidden">
-        {/* 2. Left Sidebar for Desktop */}
+        {/* 2. Desktop Left Sidebar */}
         <aside className="hidden md:flex flex-col w-64 border-r border-zinc-900 bg-zinc-950/40 p-4 shrink-0 justify-between h-full">
           <div className="flex flex-col gap-1.5">
             {filteredNavItems.map((item) => {
@@ -264,13 +272,13 @@ export default function LayoutShell({ children }: LayoutShellProps) {
           </div>
         )}
 
-        {/* 4. Page Content Body */}
+        {/* 4. Scrollable Child Content Viewport */}
         <main className="flex-1 p-6 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full h-full">
           {children}
         </main>
       </div>
 
-      {/* Sliding Notification Panel */}
+      {/* Sliding notifications pane */}
       {notificationPanelOpen && (
         <>
           <div 

@@ -13,11 +13,15 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { TransactionStatus, TransactionType } from '../transactions/entities/transaction.entity';
 
+// Reports controller to handle downloading transactions history as CSV file format
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ReportsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
+  // Route to download transaction histories as CSV
+  // Allows candidates to download their personal transactions,
+  // and Admins to pull global transaction data with filters.
   @Get('download')
   async downloadCsv(
     @CurrentUser() user: any,
@@ -33,7 +37,7 @@ export class ReportsController {
   ) {
     const filters: any = {
       page: 1,
-      limit: 10000,
+      limit: 10000, // Hard limit max 10k items for export to prevent server memory bloat
       status,
       from,
       to,
@@ -43,12 +47,14 @@ export class ReportsController {
       search,
     };
 
+    // If the requester is not an Administrator, restrict the search results to just their own transactions.
     if (user.role !== UserRole.ADMIN) {
       filters.userId = user.userId;
     }
 
     const { items } = await this.transactionsService.findAll(filters);
 
+    // CSV header row labels
     const headers = [
       'Date',
       'Reference ID',
@@ -61,6 +67,7 @@ export class ReportsController {
       'Gateway Payment ID',
     ];
 
+    // Map the Transaction entity instances into flat arrays of strings
     const rows = items.map((item) => [
       item.createdAt.toISOString(),
       item.referenceId,
@@ -73,6 +80,7 @@ export class ReportsController {
       item.gatewayPaymentId || 'N/A',
     ]);
 
+    // Build the CSV content block. Escape quotes to avoid broken columns when reading in Excel/Google Sheets.
     const csvContent = [
       headers.join(','),
       ...rows.map((row) =>
@@ -85,6 +93,7 @@ export class ReportsController {
       ),
     ].join('\n');
 
+    // Return the result directly as a downloadable attachment stream
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader(
       'Content-Disposition',

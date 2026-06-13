@@ -7,14 +7,16 @@ import { ConfigService } from '@nestjs/config';
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly configService: ConfigService) {
     super({
+      // Read the JWT bearer token directly from the request headers
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: configService.get<string>('jwt.secret') || 'default_fallback_secret_key_2026',
     });
   }
 
+  // Once Passport decodes and validates the token, it triggers this method.
+  // The object returned here is injected into req.user by NestJS.
   async validate(payload: any) {
-    // Return key properties attached to req.user
     return { userId: payload.sub, email: payload.email, role: payload.role };
   }
 }

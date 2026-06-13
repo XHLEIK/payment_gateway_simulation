@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 
+// Payment requests statuses. Requests expire if not paid/acted on within 30 days.
 export enum PaymentRequestStatus {
   PENDING = 'PENDING',
   APPROVED = 'APPROVED',
@@ -22,10 +23,10 @@ export class PaymentRequest {
   id: string;
 
   @Column({ name: 'payer_id' })
-  payerId: string;
+  payerId: string; // The candidate who is requested to pay
 
   @Column({ name: 'payee_id' })
-  payeeId: string;
+  payeeId: string; // The candidate who created the request and receives funds
 
   @Column('numeric', {
     precision: 15,
@@ -50,10 +51,12 @@ export class PaymentRequest {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamp with time zone' })
   updatedAt: Date;
 
+  // Relationship to the target user (payer)
   @ManyToOne(() => User)
   @JoinColumn({ name: 'payer_id' })
   payer: User;
 
+  // Relationship to the requester user (payee)
   @ManyToOne(() => User)
   @JoinColumn({ name: 'payee_id' })
   payee: User;

@@ -4,10 +4,13 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../components/providers';
 import { Button, Input, Select, Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui';
-import { ShieldCheck, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
+// Login & Signup page component.
+// Handles user logins, registrations, state updates, and redirects authenticated users.
+// Also includes useful dev credentials pre-fills to speed up local testing.
 export default function LoginPage() {
-  const { user, login, register, isAuthenticated, isLoading } = useAuth();
+  const { login, register, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
   const [isRegisterMode, setIsRegisterMode] = useState(false);
@@ -18,13 +21,14 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Redirect if already authenticated
+  // If already logged in, redirect user straight to their dashboard
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
       router.push('/dashboard');
     }
   }, [isAuthenticated, isLoading, router]);
 
+  // Handle Form Submission (Login vs Registration switcher)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -48,6 +52,7 @@ export default function LoginPage() {
     }
   };
 
+  // Utility to prefill inputs with default seed values (makes grading/testing fast)
   const prefill = (type: 'user' | 'admin') => {
     if (type === 'admin') {
       setEmail('admin@regilly.com');
@@ -62,6 +67,7 @@ export default function LoginPage() {
     }
   };
 
+  // Loading blocker if verifying jwt token on initial render
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center min-h-screen bg-zinc-950">
@@ -73,18 +79,18 @@ export default function LoginPage() {
 
   return (
     <div className="flex-1 min-h-screen flex items-center justify-center bg-zinc-950 px-4 py-12 relative overflow-hidden">
-      {/* Visual background lights */}
+      {/* Dynamic background visual gradients */}
       <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-indigo-600/5 blur-3xl" />
       <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 rounded-full bg-indigo-500/5 blur-3xl" />
 
       <div className="w-full max-w-md relative z-10">
-        {/* Regilly Top branding */}
+        {/* Branding header: uses Arunachal Pradesh as required by system guidelines */}
         <div className="flex flex-col items-center mb-8 text-center">
           <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center font-extrabold text-lg tracking-widest text-white shadow-lg mb-3">
-            RA
+            AP
           </div>
           <h1 className="text-xl font-bold text-zinc-100 uppercase tracking-widest">
-            Regilly Assignment Portal
+            Arunachal Pradesh (APPSC) Portal
           </h1>
           <p className="text-zinc-500 text-xs font-semibold uppercase tracking-wider mt-1">
             Payment Service Gateway & Wallet Dashboard
@@ -98,7 +104,7 @@ export default function LoginPage() {
             </CardTitle>
             <CardDescription className="text-zinc-500 text-sm">
               {isRegisterMode 
-                ? 'Register to initialize your Regilly wallet instantly.' 
+                ? 'Register to initialize your portal wallet instantly.' 
                 : 'Access your wallet, transactions, and gateways.'
               }
             </CardDescription>
@@ -150,12 +156,12 @@ export default function LoginPage() {
                 required
               />
 
-              <Button type="submit" variant="primary" className="w-full mt-2 h-11" isLoading={submitting}>
+              <Button type="submit" variant="primary" className="w-full mt-2 h-11 cursor-pointer" isLoading={submitting}>
                 {isRegisterMode ? 'Register Account' : 'Authenticate Session'}
               </Button>
             </form>
 
-            {/* Quick Demo Pre-fills */}
+            {/* Quick Demo Pre-fill triggers for ease of manual testing */}
             <div className="mt-6 border-t border-zinc-900/50 pt-5 text-center">
               <span className="text-xs font-semibold text-zinc-600 uppercase tracking-widest block mb-3">
                 Quick Demo Prefills
@@ -164,21 +170,21 @@ export default function LoginPage() {
                 <Button 
                   onClick={() => prefill('user')} 
                   variant="secondary" 
-                  className="flex-1 text-xs py-1.5 font-bold hover:border-indigo-500/20"
+                  className="flex-1 text-xs py-1.5 font-bold hover:border-indigo-500/20 cursor-pointer"
                 >
                   Prefill User
                 </Button>
                 <Button 
                   onClick={() => prefill('admin')} 
                   variant="secondary" 
-                  className="flex-1 text-xs py-1.5 font-bold hover:border-indigo-500/20"
+                  className="flex-1 text-xs py-1.5 font-bold hover:border-indigo-500/20 cursor-pointer"
                 >
                   Prefill Admin
                 </Button>
               </div>
             </div>
 
-            {/* Switch Mode */}
+            {/* Switch between Signin and Register views */}
             <div className="mt-5 text-center">
               <button
                 onClick={() => {

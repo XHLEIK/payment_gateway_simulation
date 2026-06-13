@@ -22,15 +22,19 @@ import {
   Check
 } from 'lucide-react';
 
+// Wallet management control page.
+// Allows candidates to credit their wallet balances, transfer money to other candidate profiles, 
+// configure their security transaction PINs, and review payment requests.
 export default function WalletPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
+  // Tab navigation state
   const [activeTab, setActiveTab] = useState<'deposit' | 'send' | 'request'>('deposit');
   const [rechargeAmount, setRechargeAmount] = useState('500');
   const [errorMsg, setErrorMsg] = useState('');
   
-  // Deposit checkout flow state
+  // Deposit checkout state machine
   const [checkoutStep, setCheckoutStep] = useState<'idle' | 'initiated' | 'verifying' | 'success' | 'failed'>('idle');
   const [activeOrder, setActiveOrder] = useState<{
     orderId: string;
@@ -39,7 +43,7 @@ export default function WalletPage() {
     referenceId: string;
   } | null>(null);
 
-  // Send Money state flow: 'email' | 'pin-setup' | 'transfer' | 'success' | 'failed'
+  // Send Money state machine flow: 'email' (verify payee) -> 'pin-setup' (if missing PIN) -> 'transfer' -> 'success' | 'failed'
   const [sendStep, setSendStep] = useState<'email' | 'pin-setup' | 'transfer' | 'success' | 'failed'>('email');
   const [sendEmail, setSendEmail] = useState('');
   const [sendAmount, setSendAmount] = useState('');
@@ -52,20 +56,20 @@ export default function WalletPage() {
   const [simulateFailure, setSimulateFailure] = useState(false);
   const [simulateProcessing, setSimulateProcessing] = useState(false);
 
-  // Request Money state
+  // Request Money form state variables
   const [reqEmail, setReqEmail] = useState('');
   const [reqAmount, setReqAmount] = useState('');
   const [reqLoading, setReqLoading] = useState(false);
   const [reqSuccess, setReqSuccess] = useState(false);
   const [reqError, setReqError] = useState('');
 
-  // Payment Requests Approval state
+  // Payment Requests Approval modal state
   const [activeRequestToPay, setActiveRequestToPay] = useState<any | null>(null);
   const [payPin, setPayPin] = useState('');
   const [payLoading, setPayLoading] = useState(false);
   const [payError, setPayError] = useState('');
 
-  // 1. Query Balance
+  // 1. Fetch current wallet balance
   const { data: balanceData, isLoading: balanceLoading } = useQuery({
     queryKey: ['wallet-balance'],
     queryFn: async () => {
@@ -74,7 +78,7 @@ export default function WalletPage() {
     },
   });
 
-  // Query Daily Limit
+  // 2. Fetch user's daily spend summary (checks against daily spend limits)
   const { data: dailyLimitData } = useQuery({
     queryKey: ['daily-limit'],
     queryFn: async () => {
@@ -83,7 +87,7 @@ export default function WalletPage() {
     },
   });
 
-  // 2. Query Wallet History
+  // 3. Fetch transaction history log for this user
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['wallet-history'],
     queryFn: async () => {
@@ -92,7 +96,7 @@ export default function WalletPage() {
     },
   });
 
-  // 3. Query Received Pending Requests
+  // 4. Fetch incoming payment requests that this user needs to review
   const { data: receivedRequests = [], refetch: refetchReceived } = useQuery({
     queryKey: ['received-requests'],
     queryFn: async () => {
@@ -101,7 +105,7 @@ export default function WalletPage() {
     },
   });
 
-  // 4. Query Sent Requests
+  // 5. Fetch payment requests sent by this user to other profiles
   const { data: sentRequests = [], refetch: refetchSent } = useQuery({
     queryKey: ['sent-requests'],
     queryFn: async () => {
@@ -110,10 +114,10 @@ export default function WalletPage() {
     },
   });
 
-  // 5. Initiate Checkout Mutation (Deposit)
+  // Initiate checkout session (deposit flow)
   const initiateMutation = useMutation({
     mutationFn: async (amount: number) => {
-      const requestId = crypto.randomUUID();
+      const requestId = crypto.randomUUID(); // Idempotency key
       const res = await api.post('/payments/initiate', {
         amount,
         type: 'CREDIT',
@@ -135,7 +139,7 @@ export default function WalletPage() {
     },
   });
 
-  // 6. Verify Payment Mutation (Deposit verify)
+  // Verify payment session signature checks
   const verifyMutation = useMutation({
     mutationFn: async (order: { orderId: string; signature: string }) => {
       const res = await api.post('/payments/verify', {
@@ -146,6 +150,7 @@ export default function WalletPage() {
     },
     onSuccess: () => {
       setCheckoutStep('verifying');
+      // Simulated gateway delay
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['wallet-balance'] });
         queryClient.invalidateQueries({ queryKey: ['wallet-history'] });
@@ -158,7 +163,7 @@ export default function WalletPage() {
     },
   });
 
-  // 7. Verify Candidate Email (Send Money Step 1)
+  // Verify recipient email exists before showing PIN input
   const handleVerifyRecipient = async (e: React.FormEvent) => {
     e.preventDefault();
     setSendError('');
@@ -167,12 +172,12 @@ export default function WalletPage() {
       const res = await api.get('/users/check-email', { params: { email: sendEmail } });
       setRecipientName(res.data.name);
       
-      // Check if logged in user has set a PIN
+      // Determine if logged-in user already set a security PIN
       const pinRes = await api.get('/users/has-pin');
       if (pinRes.data.hasPin) {
         setSendStep('transfer');
       } else {
-        setSendStep('pin-setup');
+        setSendStep('pin-setup'); // Redirect to configure a new PIN
       }
     } catch (err: any) {
       setSendError(err.response?.data?.message || 'Candidate email verification failed');
@@ -181,7 +186,7 @@ export default function WalletPage() {
     }
   };
 
-  // 8. Set Transaction PIN (Send Money Step 2)
+  // Configure a new 6-digit transaction PIN
   const handleSetTransactionPin = async (e: React.FormEvent) => {
     e.preventDefault();
     setSendError('');
@@ -196,13 +201,13 @@ export default function WalletPage() {
     }
   };
 
-  // 9. Execute Direct Transfer (Send Money Step 3)
+  // Execute direct balance transfer to target email profile
   const handleSendMoney = async (e: React.FormEvent) => {
     e.preventDefault();
     setSendError('');
     setSendLoading(true);
     try {
-      const requestId = crypto.randomUUID();
+      const requestId = crypto.randomUUID(); // Idempotency token
       const amountNum = parseFloat(sendAmount);
       const res = await api.post('/wallet/send-money', {
         recipientEmail: sendEmail,
@@ -227,7 +232,7 @@ export default function WalletPage() {
     }
   };
 
-  // 10. Request Money Submission
+  // Submit billing payment request
   const handleRequestMoney = async (e: React.FormEvent) => {
     e.preventDefault();
     setReqError('');
@@ -250,7 +255,7 @@ export default function WalletPage() {
     }
   };
 
-  // 11. Approve Received Request (Submit PIN)
+  // Approve payment request (payer enters transaction PIN to authorize debit)
   const handleApproveRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeRequestToPay) return;
@@ -272,7 +277,7 @@ export default function WalletPage() {
     }
   };
 
-  // 12. Reject Received Request
+  // Decline payment request
   const handleRejectRequest = async (reqId: string) => {
     if (!confirm('Are you sure you want to reject this payment request?')) return;
     try {
@@ -325,15 +330,15 @@ export default function WalletPage() {
 
   return (
     <LayoutShell>
+      {/* Title section */}
       <div className="mb-8">
         <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Wallet Administration</h2>
         <p className="text-sm text-zinc-500">Manage deposits, peer-to-peer transfers, and audit transactional records.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Balance display & deposit/send/request portal */}
         <div className="flex flex-col gap-8 lg:col-span-1">
-          {/* Card 1: Balance Display */}
+          {/* Wallet Balance Display Card */}
           <Card className="relative overflow-hidden bg-gradient-to-br from-indigo-950/20 via-zinc-950 to-zinc-950 border border-zinc-900 shadow-lg">
             <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-indigo-600/10 blur-2xl animate-pulse" />
             <CardHeader>
@@ -354,13 +359,12 @@ export default function WalletPage() {
             </CardContent>
           </Card>
 
-          {/* Card 2: Interactive recharge/send/request portal */}
+          {/* Interactive deposit/send/request module switcher */}
           <Card className="bg-zinc-950 border border-zinc-900 shadow-md">
-            {/* Custom Premium Tabs Header */}
             <div className="flex border-b border-zinc-900 mb-5">
               <button 
                 onClick={() => { setActiveTab('deposit'); resetSendStep(); setReqError(''); setReqSuccess(false); }} 
-                className={`flex-1 pb-3 text-[10px] font-bold uppercase tracking-wider border-b-2 transition-all ${
+                className={`flex-1 pb-3 text-[10px] font-bold uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
                   activeTab === 'deposit' 
                     ? 'border-indigo-500 text-indigo-400' 
                     : 'border-transparent text-zinc-500 hover:text-zinc-400'
@@ -370,7 +374,7 @@ export default function WalletPage() {
               </button>
               <button 
                 onClick={() => { setActiveTab('send'); resetSendStep(); }} 
-                className={`flex-1 pb-3 text-[10px] font-bold uppercase tracking-wider border-b-2 transition-all ${
+                className={`flex-1 pb-3 text-[10px] font-bold uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
                   activeTab === 'send' 
                     ? 'border-indigo-500 text-indigo-400' 
                     : 'border-transparent text-zinc-500 hover:text-zinc-400'
@@ -380,7 +384,7 @@ export default function WalletPage() {
               </button>
               <button 
                 onClick={() => { setActiveTab('request'); setReqError(''); setReqSuccess(false); }} 
-                className={`flex-1 pb-3 text-[10px] font-bold uppercase tracking-wider border-b-2 transition-all ${
+                className={`flex-1 pb-3 text-[10px] font-bold uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
                   activeTab === 'request' 
                     ? 'border-indigo-500 text-indigo-400' 
                     : 'border-transparent text-zinc-500 hover:text-zinc-400'
@@ -391,7 +395,7 @@ export default function WalletPage() {
             </div>
 
             <CardContent className="pt-0">
-              {/* TAB 1: DEPOSIT PORTAL */}
+              {/* TAB 1: DEPOSIT PORTAL UI */}
               {activeTab === 'deposit' && (
                 <div>
                   {checkoutStep === 'idle' && (
@@ -412,7 +416,7 @@ export default function WalletPage() {
                         onChange={(e) => setRechargeAmount(e.target.value)}
                         required
                       />
-                      <Button type="submit" variant="primary" className="w-full font-bold text-xs" isLoading={initiateMutation.isPending}>
+                      <Button type="submit" variant="primary" className="w-full font-bold text-xs cursor-pointer" isLoading={initiateMutation.isPending}>
                         <PlusCircle className="mr-2 h-4 w-4" />
                         Initiate Checkout
                       </Button>
@@ -442,10 +446,10 @@ export default function WalletPage() {
                       </p>
 
                       <div className="flex gap-2">
-                        <Button onClick={resetCheckout} variant="secondary" className="flex-1 text-xs py-1.5 font-bold">
+                        <Button onClick={resetCheckout} variant="secondary" className="flex-1 text-xs py-1.5 font-bold cursor-pointer">
                           Cancel
                         </Button>
-                        <Button onClick={handleSimulatePayment} variant="primary" className="flex-1 text-xs py-1.5 font-bold" isLoading={verifyMutation.isPending}>
+                        <Button onClick={handleSimulatePayment} variant="primary" className="flex-1 text-xs py-1.5 font-bold cursor-pointer" isLoading={verifyMutation.isPending}>
                           Pay Now
                           <ArrowRight className="ml-2 h-4.5 w-4.5" />
                         </Button>
@@ -470,7 +474,7 @@ export default function WalletPage() {
                       <p className="text-xs text-zinc-400 mt-1 px-4">
                         Mock gateway webhook cleared successfully. ₹{activeOrder.amount.toFixed(2)} credited to your wallet.
                       </p>
-                      <Button onClick={resetCheckout} variant="success" className="mt-4 text-xs font-bold px-6">
+                      <Button onClick={resetCheckout} variant="success" className="mt-4 text-xs font-bold px-6 cursor-pointer">
                         Close Portal
                       </Button>
                     </div>
@@ -483,7 +487,7 @@ export default function WalletPage() {
                       <p className="text-xs text-zinc-400 mt-1 px-4">
                         Signature verify failed or transaction simulation crashed.
                       </p>
-                      <Button onClick={resetCheckout} variant="danger" className="mt-4 text-xs font-bold px-6">
+                      <Button onClick={resetCheckout} variant="danger" className="mt-4 text-xs font-bold px-6 cursor-pointer">
                         Try Again
                       </Button>
                     </div>
@@ -494,7 +498,7 @@ export default function WalletPage() {
               {/* TAB 2: SEND MONEY FLOW */}
               {activeTab === 'send' && (
                 <div>
-                  {/* Daily Limit Progress Bar */}
+                  {/* Spend Limits Progress Widget */}
                   {dailyLimitData && (
                     <div className="mb-5 p-3 rounded-lg bg-zinc-900/40 border border-zinc-900">
                       <div className="flex justify-between text-[11px] font-bold text-zinc-400 mb-1">
@@ -531,7 +535,7 @@ export default function WalletPage() {
                         onChange={(e) => setSendEmail(e.target.value)}
                         required
                       />
-                      <Button type="submit" variant="primary" className="w-full font-bold text-xs" isLoading={sendLoading}>
+                      <Button type="submit" variant="primary" className="w-full font-bold text-xs cursor-pointer" isLoading={sendLoading}>
                         Verify Candidate Email
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
@@ -557,7 +561,7 @@ export default function WalletPage() {
                         onChange={(e) => setSetupPin(e.target.value.replace(/\D/g, ''))}
                         required
                       />
-                      <Button type="submit" variant="primary" className="w-full font-bold text-xs" isLoading={sendLoading}>
+                      <Button type="submit" variant="primary" className="w-full font-bold text-xs cursor-pointer" isLoading={sendLoading}>
                         Configure & Set PIN
                       </Button>
                     </form>
@@ -595,58 +599,58 @@ export default function WalletPage() {
                         required
                       />
 
-                      {/* Simulation Toggles */}
+                      {/* Simulation controls */}
                       <div className="space-y-2.5 p-3 rounded-lg bg-zinc-900/30 border border-zinc-900/60 mt-1">
                         <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
                           Simulation Mode Controls
                         </span>
                         
                         <div className="flex items-center justify-between">
-                          <label className="text-xs text-zinc-300 font-medium">Simulate Failed Payment</label>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSimulateFailure(!simulateFailure);
-                              if (!simulateFailure) setSimulateProcessing(false);
-                            }}
-                            className={`w-9 h-5 rounded-full transition-colors relative focus:outline-none cursor-pointer ${
-                              simulateFailure ? 'bg-red-600' : 'bg-zinc-800'
-                            }`}
-                          >
-                            <span 
-                              className={`absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform ${
-                                simulateFailure ? 'translate-x-4' : 'translate-x-0'
-                              }`} 
-                            />
-                          </button>
+                           <label className="text-xs text-zinc-300 font-medium">Simulate Failed Payment</label>
+                           <button
+                             type="button"
+                             onClick={() => {
+                               setSimulateFailure(!simulateFailure);
+                               if (!simulateFailure) setSimulateProcessing(false);
+                             }}
+                             className={`w-9 h-5 rounded-full transition-colors relative focus:outline-none cursor-pointer ${
+                               simulateFailure ? 'bg-red-600' : 'bg-zinc-800'
+                             }`}
+                           >
+                             <span 
+                               className={`absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform ${
+                                 simulateFailure ? 'translate-x-4' : 'translate-x-0'
+                               }`} 
+                             />
+                           </button>
                         </div>
 
                         <div className="flex items-center justify-between">
-                          <label className="text-xs text-zinc-300 font-medium">Simulate Processing State</label>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSimulateProcessing(!simulateProcessing);
-                              if (!simulateProcessing) setSimulateFailure(false);
-                            }}
-                            className={`w-9 h-5 rounded-full transition-colors relative focus:outline-none cursor-pointer ${
-                              simulateProcessing ? 'bg-amber-600' : 'bg-zinc-800'
-                            }`}
-                          >
-                            <span 
-                              className={`absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform ${
-                                simulateProcessing ? 'translate-x-4' : 'translate-x-0'
-                              }`} 
-                            />
-                          </button>
+                           <label className="text-xs text-zinc-300 font-medium">Simulate Processing State</label>
+                           <button
+                             type="button"
+                             onClick={() => {
+                               setSimulateProcessing(!simulateProcessing);
+                               if (!simulateProcessing) setSimulateFailure(false);
+                             }}
+                             className={`w-9 h-5 rounded-full transition-colors relative focus:outline-none cursor-pointer ${
+                               simulateProcessing ? 'bg-amber-600' : 'bg-zinc-800'
+                             }`}
+                           >
+                             <span 
+                               className={`absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform ${
+                                 simulateProcessing ? 'translate-x-4' : 'translate-x-0'
+                               }`} 
+                             />
+                           </button>
                         </div>
                       </div>
 
                       <div className="flex gap-2 mt-2">
-                        <Button type="button" onClick={resetSendStep} variant="secondary" className="flex-1 text-xs py-1.5 font-bold">
+                        <Button type="button" onClick={resetSendStep} variant="secondary" className="flex-1 text-xs py-1.5 font-bold cursor-pointer">
                           Back
                         </Button>
-                        <Button type="submit" variant="primary" className="flex-1 text-xs py-1.5 font-bold" isLoading={sendLoading}>
+                        <Button type="submit" variant="primary" className="flex-1 text-xs py-1.5 font-bold cursor-pointer" isLoading={sendLoading}>
                           <Send className="mr-2 h-3.5 w-3.5" />
                           Transfer
                         </Button>
@@ -661,7 +665,7 @@ export default function WalletPage() {
                       <p className="text-xs text-zinc-400 mt-1 px-4">
                         {sendSuccessMsg}
                       </p>
-                      <Button onClick={resetSendStep} variant="success" className="mt-4 text-xs font-bold px-6">
+                      <Button onClick={resetSendStep} variant="success" className="mt-4 text-xs font-bold px-6 cursor-pointer">
                         Done
                       </Button>
                     </div>
@@ -674,7 +678,7 @@ export default function WalletPage() {
                       <p className="text-xs text-zinc-400 mt-1 px-4">
                         {sendError || 'Too many incorrect attempts. Account has been locked for 15 minutes.'}
                       </p>
-                      <Button onClick={resetSendStep} variant="danger" className="mt-4 text-xs font-bold px-6">
+                      <Button onClick={resetSendStep} variant="danger" className="mt-4 text-xs font-bold px-6 cursor-pointer">
                         Back to Start
                       </Button>
                     </div>
@@ -682,7 +686,7 @@ export default function WalletPage() {
                 </div>
               )}
 
-              {/* TAB 3: REQUEST PORTAL */}
+              {/* TAB 3: REQUEST BILLING UI */}
               {activeTab === 'request' && (
                 <form onSubmit={handleRequestMoney} className="flex flex-col gap-4">
                   {reqError && (
@@ -715,7 +719,7 @@ export default function WalletPage() {
                     onChange={(e) => setReqAmount(e.target.value)}
                     required
                   />
-                  <Button type="submit" variant="primary" className="w-full font-bold text-xs" isLoading={reqLoading}>
+                  <Button type="submit" variant="primary" className="w-full font-bold text-xs cursor-pointer" isLoading={reqLoading}>
                     <FileText className="mr-2 h-4 w-4" />
                     Request Payment
                   </Button>
@@ -725,9 +729,9 @@ export default function WalletPage() {
           </Card>
         </div>
 
-        {/* Right Column: Pending Payment Requests & Wallet History ledger */}
+        {/* Right Column: Pending payment requests & history ledgers */}
         <div className="flex flex-col gap-6 lg:col-span-2">
-          {/* Section A: Pending Received Payment Requests */}
+          {/* Section A: Pending billing requests from other users */}
           {receivedRequests.length > 0 && (
             <Card className="bg-zinc-950 border border-zinc-900 shadow-md">
               <CardHeader className="pb-3 border-b border-zinc-900/50">
@@ -756,14 +760,14 @@ export default function WalletPage() {
                           <Button 
                             onClick={() => handleRejectRequest(req.id)} 
                             variant="ghost" 
-                            className="text-xs py-1 px-3 border border-zinc-800 text-zinc-400 hover:text-red-400"
+                            className="text-xs py-1 px-3 border border-zinc-800 text-zinc-400 hover:text-red-400 cursor-pointer"
                           >
                             Reject
                           </Button>
                           <Button 
                             onClick={() => { setActiveRequestToPay(req); setPayPin(''); setPayError(''); }} 
                             variant="success" 
-                            className="text-xs py-1 px-4 font-bold"
+                            className="text-xs py-1 px-4 font-bold cursor-pointer"
                           >
                             Pay Now
                           </Button>
@@ -776,7 +780,7 @@ export default function WalletPage() {
             </Card>
           )}
 
-          {/* Section B: Sent Requests Status Manager */}
+          {/* Section B: Status logs of requests sent out */}
           {sentRequests.length > 0 && (
             <Card className="bg-zinc-950 border border-zinc-900 shadow-sm">
               <CardHeader className="pb-3 border-b border-zinc-900/50">
@@ -817,7 +821,7 @@ export default function WalletPage() {
             </Card>
           )}
 
-          {/* Section C: Wallet ledger Logs */}
+          {/* Section C: Complete wallet balance mutations logs */}
           <Card className="bg-zinc-950 border border-zinc-900 flex flex-col justify-between">
             <div>
               <CardHeader className="border-b border-zinc-900/50 pb-4">
@@ -896,7 +900,7 @@ export default function WalletPage() {
         </div>
       </div>
 
-      {/* OVERLAY PIN MODAL (For approving received payment requests) */}
+      {/* OVERLAY SECURITY MODAL: Confirm Transaction PIN to pay incoming requests */}
       {activeRequestToPay && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
           <div className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
@@ -938,14 +942,14 @@ export default function WalletPage() {
                   type="button" 
                   onClick={() => { setActiveRequestToPay(null); setPayPin(''); setPayError(''); }} 
                   variant="secondary" 
-                  className="flex-1 text-xs py-1.5 font-bold"
+                  className="flex-1 text-xs py-1.5 font-bold cursor-pointer"
                 >
                   Cancel
                 </Button>
                 <Button 
                   type="submit" 
                   variant="success" 
-                  className="flex-1 text-xs py-1.5 font-bold" 
+                  className="flex-1 text-xs py-1.5 font-bold cursor-pointer" 
                   isLoading={payLoading}
                 >
                   Pay Request
@@ -958,4 +962,3 @@ export default function WalletPage() {
     </LayoutShell>
   );
 }
-

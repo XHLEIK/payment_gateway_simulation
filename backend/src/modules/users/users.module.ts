@@ -6,9 +6,10 @@ import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 
 @Module({
+  // Load TypeORM repositories for User and Wallet. UsersService creates wallets for new users, so it needs both.
   imports: [TypeOrmModule.forFeature([User, Wallet])],
   providers: [UsersService],
   controllers: [UsersController],
-  exports: [UsersService],
+  exports: [UsersService], // Export UsersService so AuthModule and other modules can use it for verification/lookup
 })
 export class UsersModule {}

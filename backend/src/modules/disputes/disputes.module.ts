@@ -7,6 +7,7 @@ import { TransactionsModule } from '../transactions/transactions.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
+  // Load Dispute entity and business module dependencies for resolving disputes and notifying users
   imports: [
     TypeOrmModule.forFeature([Dispute]),
     TransactionsModule,

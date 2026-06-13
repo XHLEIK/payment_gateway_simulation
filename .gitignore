@@ -1,14 +1,30 @@
+# System files
+.DS_Store
+Thumbs.db
+
+# Dependencies
 node_modules/
+
+# Next.js build output
 .next/
+
+# NestJS build output
 dist/
+
+# Application runtime logs
 logs/
+
+# Local environment variables and secrets (NEVER commit these)
 .env
 .env.*
+
+# AI / tool configurations and generated metadata
 .claude/
 .gitnexus/
-*.pdf
-.DS_Store
-explanation.md
-graphify-out/
 .gemini/
+graphify-out/
 GEMINI.md
+
+# Documentation and project specs
+*.pdf
+explanation.md

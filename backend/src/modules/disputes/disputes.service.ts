@@ -18,7 +18,7 @@ import { Wallet } from '../wallets/entities/wallet.entity';
 export class DisputesService {
   private readonly logger = new Logger(DisputesService.name);
 
-  // Adjacency-list FSM for O(1) transition validation
+  // Adjacency-list finite state machine (FSM) defining valid status progressions for disputes
   private readonly allowedTransitions: Record<DisputeStatus, DisputeStatus[]> = {
     [DisputeStatus.OPEN]: [DisputeStatus.UNDER_REVIEW, DisputeStatus.REJECTED],
     [DisputeStatus.UNDER_REVIEW]: [DisputeStatus.RESOLVED, DisputeStatus.REJECTED],
@@ -33,19 +33,16 @@ export class DisputesService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  /**
-   * Create a dispute. Enforces compound uniqueness (one dispute per user per transaction).
-   */
+  // Creates a new dispute on a transaction. Ensures they don't file duplicates for the same txn.
   async create(
     userId: string,
     transactionId: string,
     reason: string,
     evidence?: string,
   ): Promise<Dispute> {
-    // Validate transaction exists
     const transaction = await this.transactionsService.findOne(transactionId);
 
-    // Check for existing open/under-review dispute by this user
+    // Compound uniqueness check: check if this user already filed a dispute for this transaction
     const existing = await this.disputeRepository.findOne({
       where: { transactionId, userId },
     });
@@ -71,15 +68,12 @@ export class DisputesService {
     });
 
     const saved = await this.disputeRepository.save(dispute);
-
     this.logger.log(`Dispute ${saved.id} created by user ${userId} for transaction ${transactionId}`);
 
     return saved;
   }
 
-  /**
-   * Find all disputes. Admin sees all, user sees own.
-   */
+  // Lists disputes. Admin can view all, standard candidates only see their own.
   async findAll(filters: {
     userId?: string;
     isAdmin: boolean;
@@ -118,9 +112,7 @@ export class DisputesService {
     };
   }
 
-  /**
-   * Update dispute status with O(1) FSM validation.
-   */
+  // Updates dispute status. Resolving a dispute triggers wallet chargebacks atomically.
   async updateStatus(
     disputeId: string,
     toStatus: DisputeStatus,
@@ -136,7 +128,7 @@ export class DisputesService {
       throw new NotFoundException(`Dispute ${disputeId} not found`);
     }
 
-    // O(1) transition validation
+    // Validate state transition against the FSM mapping
     const allowed = this.allowedTransitions[dispute.status] || [];
     if (!allowed.includes(toStatus)) {
       throw new BadRequestException(
@@ -150,6 +142,7 @@ export class DisputesService {
       dispute.adminNotes = adminNotes;
     }
 
+    // If resolving the dispute, reverse or refund the original transaction balance
     if (toStatus === DisputeStatus.RESOLVED) {
       const transaction = dispute.transaction;
       if (!transaction) {
@@ -160,6 +153,7 @@ export class DisputesService {
         throw new BadRequestException('Transaction is already reversed or refunded');
       }
 
+      // Handle P2P Reversals (debit receiver wallet, credit sender wallet)
       if (transaction.type === TransactionType.TRANSFER || transaction.type === TransactionType.TRANSFER_CREDIT) {
         await this.disputeRepository.manager.transaction('SERIALIZABLE', async (manager) => {
           const txnRepo = manager.getRepository(Transaction);
@@ -183,6 +177,7 @@ export class DisputesService {
           const receiverId = receiverTxn.userId;
           const amount = senderTxn.amount;
 
+          // Deadlock prevention ordering
           const sortedUserIds = [senderId, receiverId].sort();
           const walletA = await walletRepo.findOne({
             where: { userId: sortedUserIds[0] },
@@ -231,6 +226,7 @@ export class DisputesService {
           }
         });
       } else if (transaction.type === TransactionType.DEBIT || transaction.type === TransactionType.PAYMENT) {
+        // Handle Debit/Payment Refund (credits back the user's wallet)
         await this.disputeRepository.manager.transaction('SERIALIZABLE', async (manager) => {
           const txnRepo = manager.getRepository(Transaction);
           const walletRepo = manager.getRepository(Wallet);
@@ -269,7 +265,7 @@ export class DisputesService {
 
     const updated = await this.disputeRepository.save(dispute);
 
-    // Fire notification to dispute creator
+    // Send status update notification to the candidate who filed the dispute
     await this.notificationsService.create(
       dispute.userId,
       NotificationType.DISPUTE_UPDATED,

@@ -1,13 +1,9 @@
-// Database seeding script for populating realistic mock transactions,
-// users, wallets, and disputes for demonstration/test runs.
 const { Client } = require('pg');
 const crypto = require('crypto');
 
-// Standard Bcrypt password hash for: 'Subham@1234'
-const bcryptHash = '$2b$10$RA.jVR8hPL4kL/JXN9FvuO8MC/IG3SIVh7tbnoWJ2n4iUuiXqD7v2'; 
+const bcryptHash = '$2b$10$RA.jVR8hPL4kL/JXN9FvuO8MC/IG3SIVh7tbnoWJ2n4iUuiXqD7v2'; // Hash for standard 'Subham@1234' password
 
-// Array of mock candidates with local APPSC names for demonstration.
-// Stored with seed balances to simulate account activity.
+// Array of 10 mock users to seed into the database with initial balances
 const users = [
   { id: 'f5e4d3c2-b1a0-9f8e-7d6c-5b4a3f2e1d0c', name: 'Subham Bose', email: 'user@appsc.gov.in', role: 'user', balance: 2500.00 },
   { id: crypto.randomUUID(), name: 'Ayang Pertin', email: 'ayang.pertin@appsc.gov.in', role: 'user', balance: 1500.00 },
@@ -34,19 +30,19 @@ async function seedDemoData() {
     await client.connect();
     console.log('Connected to payment_gateway_db to insert demo data.');
 
-    // 1. Drop existing tables and recreate them using schema.sql
+    // 1. Clean out the existing schema and start fresh
     console.log('Dropping existing tables to re-apply clean schema.sql...');
     await client.query('DROP TABLE IF EXISTS refunds, transaction_audits, transactions, wallets, users, daily_transaction_stats CASCADE;');
     
     console.log('Applying schema.sql...');
     const fs = require('fs');
     const path = require('path');
-    const sqlPath = path.join(__dirname, '..', '..', 'schema.sql');
+    const sqlPath = path.join(__dirname, '..', 'schema.sql');
     const sql = fs.readFileSync(sqlPath, 'utf8');
     await client.query(sql);
     console.log('Schema applied successfully.');
 
-    // 2. Insert Users and Wallets
+    // 2. Seed Users and Wallets
     console.log('Inserting/updating 10 demo users...');
     for (const u of users) {
       await client.query(
@@ -66,12 +62,9 @@ async function seedDemoData() {
     }
     console.log('Inserted/updated 10 users & wallets.');
 
-    // 3. Generate Transactions (50 successful/initiated, 10 failed)
+    // 3. Generate Transactions (50 successful/initiated, 10 failed) across the last 14 days
     console.log('Generating 60 transactions across the last 14 days...');
-    const transactionStatuses = ['SUCCESS', 'PROCESSING', 'INITIATED'];
-    const transactionTypes = ['CREDIT', 'DEBIT'];
-    const reasons = ['Application Fee', 'Registration Fee', 'Document Verification', 'Wallet Topup', 'Admit Card Processing'];
-
+    
     const dates = [];
     for (let i = 0; i < 14; i++) {
       const d = new Date();
@@ -84,7 +77,7 @@ async function seedDemoData() {
     // 50 Success/Processing/Initiated transactions
     for (let i = 0; i < 50; i++) {
       const user = users[i % users.length];
-      const type = i % 3 === 0 ? 'CREDIT' : 'DEBIT'; // credit or debit
+      const type = i % 3 === 0 ? 'CREDIT' : 'DEBIT';
       const amount = parseFloat((Math.random() * 500 + 50).toFixed(2));
       const status = i < 40 ? 'SUCCESS' : (i < 45 ? 'PROCESSING' : 'INITIATED');
       const date = dates[i % dates.length];
@@ -93,10 +86,9 @@ async function seedDemoData() {
       const gatewayOrderId = status !== 'INITIATED' ? `order_${crypto.randomBytes(6).toString('hex')}` : null;
       const gatewayPaymentId = status === 'SUCCESS' ? `pay_${crypto.randomBytes(6).toString('hex')}` : null;
 
-      // For SUCCESS/DEBIT, make sure the user had enough balance
       let balanceAfter = null;
       if (status === 'SUCCESS') {
-        balanceAfter = user.balance; // Mock balanceAfter as current balance
+        balanceAfter = user.balance; // Mock balanceAfter
       }
 
       const res = await client.query(
@@ -107,7 +99,7 @@ async function seedDemoData() {
       );
       insertedTransactions.push(res.rows[0]);
 
-      // Audit logs
+      // Seed audit records for transaction states
       const txnId = res.rows[0].id;
       await client.query(
         `INSERT INTO transaction_audits (transaction_id, from_status, to_status, actor, correlation_id, timestamp)
@@ -143,7 +135,6 @@ async function seedDemoData() {
       );
       insertedTransactions.push(res.rows[0]);
 
-      // Audit logs
       const txnId = res.rows[0].id;
       await client.query(
         `INSERT INTO transaction_audits (transaction_id, from_status, to_status, actor, correlation_id, timestamp)
@@ -163,7 +154,6 @@ async function seedDemoData() {
     console.log('Inserting 5 refund requests...');
     const successfulTxns = insertedTransactions.filter(t => t.status === 'SUCCESS' && t.type === 'DEBIT');
     
-    // We will select 5 transactions to refund
     const refundStatuses = ['PENDING', 'APPROVED', 'REJECTED', 'PENDING', 'APPROVED'];
     const refundReasons = ['Double payment', 'Accidental registration', 'Wrong candidate portal select', 'Server error debit', 'Duplicate transaction'];
 
@@ -182,7 +172,7 @@ async function seedDemoData() {
       );
 
       if (status === 'APPROVED') {
-        // If approved, update transaction status to REFUNDED
+        // Update transaction status to REFUNDED
         await client.query(
           `UPDATE transactions SET status = 'REFUNDED' WHERE id = $1`,
           [txn.id]
@@ -206,7 +196,10 @@ async function seedDemoData() {
         `SELECT 
            COUNT(CASE WHEN status IN ('SUCCESS', 'REFUNDED') THEN 1 END) as success_count,
            COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed_count,
-           COALESCE(SUM(CASE WHEN status IN ('SUCCESS', 'REFUNDED') THEN amount ELSE 0 END), 0) as total_volume
+           COALESCE(SUM(CASE WHEN status IN ('SUCCESS', 'REFUNDED') THEN amount ELSE 0 END), 0) as total_volume,
+           COUNT(CASE WHEN type = 'TRANSFER' AND status = 'SUCCESS' THEN 1 END) as transfer_count,
+           COUNT(CASE WHEN type = 'REFUND' OR status = 'REFUNDED' THEN 1 END) as refund_count,
+           COUNT(CASE WHEN type IN ('PAYMENT', 'CREDIT', 'DEBIT') AND type != 'TRANSFER' AND status = 'SUCCESS' THEN 1 END) as payment_count
          FROM transactions
          WHERE created_at::date = $1`,
         [dateString]
@@ -214,13 +207,24 @@ async function seedDemoData() {
 
       const stats = statsRes.rows[0];
       await client.query(
-        `INSERT INTO daily_transaction_stats (date, success_count, failed_count, total_volume)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO daily_transaction_stats (date, success_count, failed_count, total_volume, transfer_count, refund_count, payment_count)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (date) DO UPDATE
          SET success_count = EXCLUDED.success_count,
              failed_count = EXCLUDED.failed_count,
-             total_volume = EXCLUDED.total_volume`,
-        [dateString, parseInt(stats.success_count), parseInt(stats.failed_count), parseFloat(stats.total_volume)]
+             total_volume = EXCLUDED.total_volume,
+             transfer_count = EXCLUDED.transfer_count,
+             refund_count = EXCLUDED.refund_count,
+             payment_count = EXCLUDED.payment_count`,
+        [
+          dateString, 
+          parseInt(stats.success_count), 
+          parseInt(stats.failed_count), 
+          parseFloat(stats.total_volume),
+          parseInt(stats.transfer_count),
+          parseInt(stats.refund_count),
+          parseInt(stats.payment_count)
+        ]
       );
     }
     console.log('Daily stats populated successfully.');

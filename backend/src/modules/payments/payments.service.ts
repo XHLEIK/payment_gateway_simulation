@@ -3,8 +3,6 @@ import {
   BadRequestException,
   NotFoundException,
   Logger,
-  Inject,
-  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -31,15 +29,16 @@ export class PaymentsService {
     private readonly usersService: UsersService,
     private readonly walletsService: WalletsService,
   ) {
-    this.webhookSecret = this.configService.get<string>('webhook.secret', 'regilly_webhook_secret_hmac_key_2026');
+    // Read the secret key used for HMAC signature generation from environment config
+    this.webhookSecret = this.configService.get<string>('webhook.secret', 'appsc_webhook_secret_hmac_key_2026');
     this.port = this.configService.get<number>('port', 3001);
   }
 
-  // 1. Generate Order (Mock Payment Gateway API call)
+  // 1. Generate Order (Mock Payment Gateway API call to start payment checkout)
   async generateOrderId(amount: number): Promise<{ orderId: string; amount: number; signature: string }> {
     const orderId = `ORD-${randomBytes(6).toString('hex').toUpperCase()}`;
     
-    // Generate a valid mock signature that the client can send back
+    // Generate an HMAC signature that the client must provide back during payment verification
     const signature = this.generateMockSignature(orderId, amount);
 
     return {
@@ -49,7 +48,7 @@ export class PaymentsService {
     };
   }
 
-  // 2. Verify Payment (Mock Signature Check)
+  // 2. Verify Payment (Mock Signature Check verifying checkout parameters)
   async verifyPayment(orderId: string, signature: string, amount: number): Promise<boolean> {
     const expectedSignature = this.generateMockSignature(orderId, amount);
     if (signature !== expectedSignature) {
@@ -59,7 +58,7 @@ export class PaymentsService {
     return true;
   }
 
-  // Helper: Create secure signature for checkout validation
+  // Helper: Create secure signature for checkout validation using HMAC SHA256
   private generateMockSignature(orderId: string, amount: number): string {
     return createHmac('sha256', this.webhookSecret)
       .update(`${orderId}:${amount}`)
@@ -67,8 +66,9 @@ export class PaymentsService {
   }
 
   // 3. Trigger Mock Gateway Webhook asynchronously
+  // Simulates an external webhook callback fired from payment processors
   async triggerAsynchronousWebhook(orderId: string, amount: number, userId: string) {
-    // Simulate network delay of 2 seconds before firing the webhook callback
+    // Delay webhook fire by 2 seconds to simulate processing time
     setTimeout(async () => {
       try {
         const transaction = await this.transactionsService.findByGatewayOrderId(orderId);
@@ -77,7 +77,7 @@ export class PaymentsService {
           return;
         }
 
-        // Simulate 80% success rate
+        // Simulate an 80% success rate to demonstrate rollback handling
         const isSuccess = Math.random() < 0.8;
         const status = isSuccess ? TransactionStatus.SUCCESS : TransactionStatus.FAILED;
 
@@ -90,7 +90,7 @@ export class PaymentsService {
           timestamp: new Date().toISOString(),
         };
 
-        // Compute HMAC signature for webhook payload verification
+        // Compute HMAC signature so the webhook receiver knows it is authentic
         const payloadStr = JSON.stringify(payload);
         const signature = createHmac('sha256', this.webhookSecret)
           .update(payloadStr)
@@ -98,7 +98,6 @@ export class PaymentsService {
 
         this.logger.log(`Firing Mock Webhook for Order ${orderId} with status ${status}`);
 
-        // Post to local webhook endpoint
         const url = `http://localhost:${this.port}/api/payments/webhook`;
         await axios.post(url, payload, {
           headers: {
@@ -114,7 +113,7 @@ export class PaymentsService {
     }, 2000);
   }
 
-  // Verify HMAC header signature
+  // Verify HMAC header signature on incoming webhooks to prevent spoofing
   verifyWebhookSignature(payload: any, signature: string): boolean {
     const payloadStr = JSON.stringify(payload);
     const expectedSignature = createHmac('sha256', this.webhookSecret)
@@ -125,6 +124,22 @@ export class PaymentsService {
 
   // === PAYMENT REQUESTS (REQUEST MONEY) METHODS ===
 
+  // Helper method: check for pending requests older than 30 days and mark them EXPIRED
+  private async checkAndExpireRequests(): Promise<void> {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    // Atomic update query checking pending requests older than 30 days
+    await this.paymentRequestRepository
+      .createQueryBuilder()
+      .update(PaymentRequest)
+      .set({ status: PaymentRequestStatus.EXPIRED })
+      .where('status = :status', { status: PaymentRequestStatus.PENDING })
+      .andWhere('created_at < :thirtyDaysAgo', { thirtyDaysAgo })
+      .execute();
+  }
+
+  // Creates a pending payment request from the payee (logged-in user) to the payer (target candidate)
   async createRequest(payeeId: string, recipientEmail: string, amount: number): Promise<PaymentRequest> {
     if (amount <= 0) {
       throw new BadRequestException('Request amount must be positive');
@@ -149,7 +164,9 @@ export class PaymentsService {
     return this.paymentRequestRepository.save(request);
   }
 
+  // Fetches pending payment requests received by the candidate (they owe this money)
   async getReceivedRequests(payerId: string): Promise<PaymentRequest[]> {
+    await this.checkAndExpireRequests(); // Run cleanup first
     return this.paymentRequestRepository.find({
       where: { payerId, status: PaymentRequestStatus.PENDING },
       relations: { payee: true },
@@ -157,7 +174,9 @@ export class PaymentsService {
     });
   }
 
+  // Fetches all payment requests sent by the candidate to others
   async getSentRequests(payeeId: string): Promise<PaymentRequest[]> {
+    await this.checkAndExpireRequests(); // Run cleanup first
     return this.paymentRequestRepository.find({
       where: { payeeId },
       relations: { payer: true },
@@ -165,7 +184,10 @@ export class PaymentsService {
     });
   }
 
+  // Approves and pays a received payment request. Requires transaction PIN.
   async approveRequest(requestId: string, payerId: string, pin: string): Promise<any> {
+    await this.checkAndExpireRequests();
+
     const request = await this.paymentRequestRepository.findOne({
       where: { id: requestId },
       relations: { payee: true },
@@ -183,7 +205,7 @@ export class PaymentsService {
       throw new BadRequestException(`Payment request is already ${request.status.toLowerCase()}`);
     }
 
-    // Execute transfer using WalletsService.sendMoney (deadlock-free sorted locks)
+    // Execute transfer using WalletsService.sendMoney (featuring UUID-sorted locks for deadlock safety)
     const transferResult = await this.walletsService.sendMoney(
       payerId,
       request.payee.email,
@@ -202,7 +224,10 @@ export class PaymentsService {
     };
   }
 
+  // Rejects a received payment request
   async rejectRequest(requestId: string, payerId: string): Promise<any> {
+    await this.checkAndExpireRequests();
+
     const request = await this.paymentRequestRepository.findOne({
       where: { id: requestId },
     });

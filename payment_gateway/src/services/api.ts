@@ -1,16 +1,18 @@
 import axios from 'axios';
 
+// Central Axios API connection client.
+// Configures target baseURL and handles request intercepts for authentication and tracing headers.
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  baseURL: 'http://localhost:3001/api', // Targets local NestJS backend server port
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request Interceptor: Attach JWT Token and Correlation IDs
+// Request Interceptor: Inject JWT Bearer Tokens and unique request correlation headers
 api.interceptors.request.use(
   (config) => {
-    // 1. Attach JWT Authorization Token
+    // 1. Grab JWT Token from LocalStorage if executing in browser context
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('regilly_pg_token');
       if (token) {
@@ -18,7 +20,7 @@ api.interceptors.request.use(
       }
     }
 
-    // 2. Attach Correlation ID for distributed request tracing
+    // 2. Attach trace Correlation ID so backend logs can link logs back to client calls
     if (!config.headers['x-correlation-id']) {
       config.headers['x-correlation-id'] = crypto.randomUUID();
     }

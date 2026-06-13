@@ -5,6 +5,8 @@ import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { ConfigService } from '@nestjs/config';
 
+// End-to-End integration suite testing the P2P money transfers,
+// security PIN locking, settings resets, and payment request logic.
 describe('P2P & PIN Security (e2e)', () => {
   let app: INestApplication<App>;
   let adminToken: string;
@@ -13,11 +15,13 @@ describe('P2P & PIN Security (e2e)', () => {
   let senderId: string;
   let recipientId: string;
   
+  // Use timestamp suffix to keep email registers unique per test run
   const uniqueSuffix = Date.now();
   const senderEmail = `sender-${uniqueSuffix}@regilly.com`;
   const recipientEmail = `recipient-${uniqueSuffix}@regilly.com`;
   const password = 'TestPassword@123';
 
+  // Bootstraps full system database connections and registers our mock testers
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -34,39 +38,39 @@ describe('P2P & PIN Security (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // 1. Log in as admin to get token
+    // 1. Log in as admin to get auth tokens for crediting wallets
     const adminLoginRes = await request(app.getHttpServer())
       .post('/api/auth/login')
-      .send({ email: 'admin@regilly.com', password: 'Subham@1234' });
+      .send({ email: 'admin@appsc.gov.in', password: 'Subham@1234' });
     console.log('Admin login status:', adminLoginRes.status);
     console.log('Admin login body:', adminLoginRes.body);
     adminToken = adminLoginRes.body.access_token;
 
-    // 2. Register sender
+    // 2. Register sender candidate
     const registerSenderRes = await request(app.getHttpServer())
       .post('/api/auth/register')
       .send({ name: 'Sender Candidate', email: senderEmail, password });
     senderId = registerSenderRes.body.user.id;
 
-    // 3. Register recipient
+    // 3. Register recipient candidate
     const registerRecipientRes = await request(app.getHttpServer())
       .post('/api/auth/register')
       .send({ name: 'Recipient Candidate', email: recipientEmail, password });
     recipientId = registerRecipientRes.body.user.id;
 
-    // 4. Log in as sender to get token
+    // 4. Authenticate sender
     const senderLoginRes = await request(app.getHttpServer())
       .post('/api/auth/login')
       .send({ email: senderEmail, password });
     senderToken = senderLoginRes.body.access_token;
 
-    // 5. Log in as recipient to get token
+    // 5. Authenticate recipient
     const recipientLoginRes = await request(app.getHttpServer())
       .post('/api/auth/login')
       .send({ email: recipientEmail, password });
     recipientToken = recipientLoginRes.body.access_token;
 
-    // 6. Credit sender's wallet using Admin credit endpoint (₹5000)
+    // 6. Give the sender user ₹5000 via admin credit endpoint
     const creditRes = await request(app.getHttpServer())
       .post('/api/wallet/credit')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -82,6 +86,7 @@ describe('P2P & PIN Security (e2e)', () => {
   });
 
   describe('User Email & PIN Setup Checks', () => {
+    // Check if recipient candidate account is visible by their email address
     it('should check if a recipient email exists', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/users/check-email')
@@ -92,6 +97,7 @@ describe('P2P & PIN Security (e2e)', () => {
       expect(res.body.name).toBe('Recipient Candidate');
     });
 
+    // Check that querying a non-existent email throws a 404
     it('should throw 404 for non-existent email checks', async () => {
       await request(app.getHttpServer())
         .get('/api/users/check-email')
@@ -100,6 +106,7 @@ describe('P2P & PIN Security (e2e)', () => {
         .expect(404);
     });
 
+    // Newly registered users should not have a transaction PIN set yet
     it('should verify user initially has no transaction PIN', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/users/has-pin')
@@ -108,6 +115,7 @@ describe('P2P & PIN Security (e2e)', () => {
       expect(res.body.hasPin).toBe(false);
     });
 
+    // Users must be able to configure a new 6-digit transaction PIN
     it('should successfully set a 6-digit transaction PIN', async () => {
       await request(app.getHttpServer())
         .post('/api/users/set-pin')
@@ -125,7 +133,7 @@ describe('P2P & PIN Security (e2e)', () => {
 
   describe('PIN Locking Brute-Force Protection', () => {
     it('should increment attempt counters on wrong PIN and lock user after 5 attempts', async () => {
-      // 1st wrong attempt
+      // 1st wrong attempt -> should report 4 attempts remaining
       let res = await request(app.getHttpServer())
         .post('/api/wallet/send-money')
         .set('Authorization', `Bearer ${senderToken}`)
@@ -150,7 +158,7 @@ describe('P2P & PIN Security (e2e)', () => {
         .send({ recipientEmail, amount: 100, pin: '000000', requestId: `req-wrong-4-${uniqueSuffix}` })
         .expect(400);
 
-      // 5th wrong attempt -> Account lockout
+      // 5th wrong attempt -> Account lockout occurs
       res = await request(app.getHttpServer())
         .post('/api/wallet/send-money')
         .set('Authorization', `Bearer ${senderToken}`)
@@ -158,7 +166,7 @@ describe('P2P & PIN Security (e2e)', () => {
         .expect(400);
       expect(res.body.message).toContain('locked for 15 minutes');
 
-      // Subsequent attempt should immediately reject due to lockout
+      // Subsequent attempt with a valid PIN should still fail immediately due to the lock
       res = await request(app.getHttpServer())
         .post('/api/wallet/send-money')
         .set('Authorization', `Bearer ${senderToken}`)
@@ -168,7 +176,7 @@ describe('P2P & PIN Security (e2e)', () => {
     });
 
     it('should unlock candidate when a new PIN is successfully configured', async () => {
-      // Re-set PIN to unlock user
+      // Re-set PIN to unlock user and clear lock attempts
       await request(app.getHttpServer())
         .post('/api/users/set-pin')
         .set('Authorization', `Bearer ${senderToken}`)
@@ -185,13 +193,14 @@ describe('P2P & PIN Security (e2e)', () => {
       expect(sendRes.status).toBe(201);
       
       expect(sendRes.body.message).toContain('transferred successfully');
-      expect(sendRes.body.balance).toBe(4000);
+      expect(sendRes.body.balance).toBe(4000); // Initial 5000 - 1000 transfer = 4000
     });
   });
 
   describe('Payment Requests (Request Money)', () => {
     let paymentRequestId: string;
 
+    // Users can submit a billing request to another user
     it('should allow payee to request money from payer', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/payments/requests')
@@ -205,6 +214,7 @@ describe('P2P & PIN Security (e2e)', () => {
       paymentRequestId = res.body.id;
     });
 
+    // Payer can load their inbox of pending billing requests
     it('should allow payer to fetch received pending requests', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/payments/requests/received')
@@ -218,8 +228,8 @@ describe('P2P & PIN Security (e2e)', () => {
       expect(req.payee.email).toBe(recipientEmail);
     });
 
+    // Payer should be able to decline/reject requests
     it('should allow payer to reject a payment request', async () => {
-      // Create a request to reject
       const tempReqRes = await request(app.getHttpServer())
         .post('/api/payments/requests')
         .set('Authorization', `Bearer ${recipientToken}`)
@@ -228,15 +238,15 @@ describe('P2P & PIN Security (e2e)', () => {
 
       const tempId = tempReqRes.body.id;
 
-      // Reject it
+      // Reject the request
       await request(app.getHttpServer())
         .post(`/api/payments/requests/${tempId}/reject`)
         .set('Authorization', `Bearer ${senderToken}`)
         .expect(201);
     });
 
+    // Payer should be able to approve a billing request by supplying their transaction PIN
     it('should allow payer to approve a request with PIN and trigger transfer', async () => {
-      // Approve the first 500 request
       const res = await request(app.getHttpServer())
         .post(`/api/payments/requests/${paymentRequestId}/approve`)
         .set('Authorization', `Bearer ${senderToken}`)
@@ -247,19 +257,19 @@ describe('P2P & PIN Security (e2e)', () => {
 
       expect(res.body.message).toContain('approved and paid successfully');
       
-      // Verify sender balance is now 3500 (4000 - 500)
+      // Sender's wallet balance: 4000 - 500 = ₹3500
       const balanceRes = await request(app.getHttpServer())
         .get('/api/wallet/balance')
         .set('Authorization', `Bearer ${senderToken}`)
         .expect(200);
       expect(balanceRes.body.balance).toBe(3500);
 
-      // Verify recipient balance is now 1500 (0 starting + 1000 from direct send + 500 from approved request)
+      // Recipient's wallet balance: 1000 (from sender direct transfer) + 500 (from request approval) = ₹1500
       const recBalanceRes = await request(app.getHttpServer())
         .get('/api/wallet/balance')
         .set('Authorization', `Bearer ${recipientToken}`)
         .expect(200);
-      expect(recBalanceRes.body.balance).toBe(1500); // 0 starting + 1000 + 500 = 1500
+      expect(recBalanceRes.body.balance).toBe(1500);
     });
   });
 });

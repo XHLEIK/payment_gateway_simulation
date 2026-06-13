@@ -10,9 +10,11 @@ import { UserRole } from '../users/entities/user.entity';
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
+  // Retrieves aggregated transaction stats. Admin-only route.
   @Get('summary')
   @Roles(UserRole.ADMIN)
   async getSummary(@Query('period') period?: string) {
+    // We support 'weekly' (default, 7 days) and 'monthly' (30 days) aggregation periods
     const selectedPeriod = period === 'monthly' ? 'monthly' : 'weekly';
     return this.analyticsService.getSummary(selectedPeriod);
   }

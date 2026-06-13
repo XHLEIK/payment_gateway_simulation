@@ -30,7 +30,7 @@ import {
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState('weekly');
 
-  // Fetch aggregated weekly/monthly analytics stats from our Redis-cached endpoint
+  // Fetch aggregated stats summary. Redis cached on the backend.
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['analytics-summary', period],
     queryFn: async () => {
@@ -50,6 +50,7 @@ export default function AnalyticsPage() {
     );
   }
 
+  // Handle case where backend Redis server might be offline or failing
   if (isError || !data) {
     return (
       <LayoutShell>
@@ -67,19 +68,19 @@ export default function AnalyticsPage() {
     );
   }
 
-  // Pre-aggregated statistics
+  // Destructure metrics returned from the backend aggregation
   const successVolume = data.totalVolume;
   const successRate = data.successRate;
   const totalSuccess = data.totalSuccess;
   const totalFailed = data.totalFailed;
   
-  // Format data for Pie Chart (Success vs Failure ratios)
+  // Format success vs failure ratio pie data
   const pieData = [
     { name: 'Success', value: totalSuccess, color: '#10b981' },
     { name: 'Failure', value: totalFailed, color: '#f43f5e' },
   ].filter(item => item.value > 0);
 
-  // Format data for Bar Chart (Daily Volumes)
+  // Format daily volume charts
   const barData = data.dailyVolumeChart.map((d: any) => ({
     name: new Date(d.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
     volume: d.volume,
@@ -89,7 +90,7 @@ export default function AnalyticsPage() {
 
   return (
     <LayoutShell>
-      {/* Title & Filter Header */}
+      {/* Title & Selector Header */}
       <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Analytics Telemetry</h2>
@@ -107,8 +108,8 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Stats Cards Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      {/* Main Stats Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <Card className="bg-zinc-950 border border-zinc-900 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">
@@ -153,6 +154,51 @@ export default function AnalyticsPage() {
             <p className="text-xs text-zinc-500 mt-1">
               {totalSuccess} Cleared / {totalFailed} Failed
             </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Breakdown Metrics Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <Card className="bg-zinc-950 border border-zinc-900 shadow-md">
+          <CardHeader className="pb-2">
+            <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">
+              Direct P2P Transfers
+            </span>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-extrabold text-zinc-100">
+              {data.totalTransfers || 0}
+            </div>
+            <p className="text-xs text-zinc-500 mt-1">Peer-to-peer wallet direct sends</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-zinc-950 border border-zinc-900 shadow-md">
+          <CardHeader className="pb-2">
+            <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">
+              Refund Claims Approved
+            </span>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-extrabold text-zinc-100">
+              {data.totalRefunds || 0}
+            </div>
+            <p className="text-xs text-zinc-500 mt-1">Admin authorized refund credits</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-zinc-950 border border-zinc-900 shadow-md">
+          <CardHeader className="pb-2">
+            <span className="text-xs font-bold text-indigo-400 tracking-wider">
+              Standard Payments & Deposits
+            </span>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-extrabold text-zinc-100">
+              {data.totalPayments || 0}
+            </div>
+            <p className="text-xs text-zinc-500 mt-1">Deposits and mock gateway checkouts</p>
           </CardContent>
         </Card>
       </div>
@@ -253,7 +299,6 @@ export default function AnalyticsPage() {
                       />
                     </PieChart>
                   </ResponsiveContainer>
-                  {/* Central balance overlay */}
                   <div className="absolute top-[45%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none select-none">
                     <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest leading-none block mb-0.5">
                       Success

@@ -9,6 +9,7 @@ import { UsersModule } from '../users/users.module';
 import { WalletModule } from '../wallets/wallets.module';
 
 @Module({
+  // Import payment requests repository and business logic dependencies
   imports: [
     TypeOrmModule.forFeature([PaymentRequest]),
     TransactionsModule,

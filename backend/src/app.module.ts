@@ -7,7 +7,7 @@ import configuration from './config/configuration';
 import { RedisModule } from './modules/redis/redis.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 
-// Core Business Modules
+// Core Business Modules (keeping imports modular and isolated by domains)
 import { UsersModule } from './modules/users/users.module';
 import { WalletModule } from './modules/wallets/wallets.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -24,10 +24,13 @@ import { AppService } from './app.service';
 
 @Module({
   imports: [
+    // Global configurations using values loaded from configuration.ts
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
     }),
+    
+    // Asynchronously connect to PostgreSQL. Reads configs from configuration.ts
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -39,20 +42,27 @@ import { AppService } from './app.service';
         password: configService.get<string>('database.password'),
         database: configService.get<string>('database.name'),
         autoLoadEntities: true,
-        synchronize: false, // Rely on schema.sql and migrations for safety
+        // synchronize must be false in production to prevent TypeORM from randomly altering schema structures.
+        // We rely on schema.sql or migrations instead.
+        synchronize: false, 
         logging: false,
         extra: {
+          // Connection pooling is critical for handling high concurrent load
           min: configService.get<number>('database.poolMin', 2),
           max: configService.get<number>('database.poolMax', 10),
         },
       }),
     }),
+    
+    // Rate limiter module to prevent API abuse (Brute-forcing endpoints)
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
-        limit: 100, // Global limit: 100 requests per minute
+        limit: 100, // Enforce a global limit of 100 requests per minute
       },
     ]),
+    
+    // Register business logic domains
     RedisModule,
     UsersModule,
     WalletModule,
@@ -68,6 +78,7 @@ import { AppService } from './app.service';
   controllers: [AppController],
   providers: [
     AppService,
+    // Enable the rate-limiting throttler guard globally
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
@@ -75,6 +86,7 @@ import { AppService } from './app.service';
   ],
 })
 export class AppModule implements NestModule {
+  // Bind the request tracking Correlation ID middleware globally across all routes
   configure(consumer: MiddlewareConsumer) {
     consumer.apply(CorrelationIdMiddleware).forRoutes('*');
   }

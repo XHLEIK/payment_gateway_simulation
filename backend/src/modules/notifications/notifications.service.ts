@@ -19,10 +19,7 @@ export class NotificationsService {
     private readonly redisService: RedisService,
   ) {}
 
-  /**
-   * Create a notification and atomically increment Redis unread counter.
-   * O(1) write + O(1) Redis INCR.
-   */
+  // Create a single notification row and increment the Redis unread counter atomically
   async create(
     userId: string,
     type: NotificationType,
@@ -41,7 +38,7 @@ export class NotificationsService {
 
     const saved = await this.notificationRepository.save(notification);
 
-    // Atomic O(1) increment of unread counter in Redis
+    // Keep the Redis unread cache counter updated in O(1) time
     try {
       const key = `${this.UNREAD_KEY_PREFIX}:${userId}`;
       const client = this.redisService.getClient();
@@ -53,9 +50,7 @@ export class NotificationsService {
     return saved;
   }
 
-  /**
-   * Bulk-create notifications for multiple users (e.g., all admins).
-   */
+  // Bulk-create notifications (e.g. notifying all administrators when a P2P transfer reversal is claimed)
   async createBulk(
     userIds: string[],
     type: NotificationType,
@@ -76,7 +71,7 @@ export class NotificationsService {
 
     await this.notificationRepository.save(notifications);
 
-    // Increment all Redis counters
+    // Update all users' unread counts in Redis in a single pipeline execution
     try {
       const client = this.redisService.getClient();
       const pipeline = client.pipeline();
@@ -89,11 +84,7 @@ export class NotificationsService {
     }
   }
 
-  /**
-   * Paginated notification list. Uses priority-queue ordering:
-   * unread notifications first (sorted by createdAt DESC),
-   * then read notifications (sorted by createdAt DESC).
-   */
+  // Fetch paginated notification feed. Displays unread notifications first, then older read items.
   async findAll(userId: string, page: number = 1, limit: number = 20) {
     const offset = (page - 1) * limit;
 
@@ -115,9 +106,7 @@ export class NotificationsService {
     };
   }
 
-  /**
-   * O(1) unread count from Redis with DB fallback.
-   */
+  // O(1) lookup of unread count from Redis. Falls back to SQL count if cache is cold.
   async getUnreadCount(userId: string): Promise<number> {
     try {
       const key = `${this.UNREAD_KEY_PREFIX}:${userId}`;
@@ -130,12 +119,12 @@ export class NotificationsService {
       this.logger.warn(`Redis unread count miss for user ${userId}, falling back to DB`);
     }
 
-    // Fallback: COUNT(*) query with partial index → still fast
+    // Database count fallback. Uses partial index on 'isRead = false' for performance.
     const count = await this.notificationRepository.count({
       where: { userId, isRead: false },
     });
 
-    // Seed Redis cache for future O(1) lookups
+    // Seed back to Redis so next read is O(1)
     try {
       const key = `${this.UNREAD_KEY_PREFIX}:${userId}`;
       await this.redisService.set(key, String(count));
@@ -146,9 +135,7 @@ export class NotificationsService {
     return count;
   }
 
-  /**
-   * Mark single notification as read. O(1) Redis DECR.
-   */
+  // Marks a single notification as read and decrements the Redis unread count
   async markRead(notificationId: string, userId: string): Promise<void> {
     const notification = await this.notificationRepository.findOne({
       where: { id: notificationId, userId },
@@ -159,13 +146,13 @@ export class NotificationsService {
     }
 
     if (notification.isRead) {
-      return; // Already read, idempotent
+      return; // Already marked read, do nothing
     }
 
     notification.isRead = true;
     await this.notificationRepository.save(notification);
 
-    // Atomic O(1) decrement
+    // Decr the unread counter in Redis
     try {
       const key = `${this.UNREAD_KEY_PREFIX}:${userId}`;
       const client = this.redisService.getClient();
@@ -175,9 +162,7 @@ export class NotificationsService {
     }
   }
 
-  /**
-   * Mark all notifications as read. Bulk UPDATE + Redis DEL.
-   */
+  // Marks all unread notifications as read.
   async markAllRead(userId: string): Promise<void> {
     await this.notificationRepository
       .createQueryBuilder()
@@ -186,7 +171,7 @@ export class NotificationsService {
       .where('userId = :userId AND isRead = false', { userId })
       .execute();
 
-    // Reset Redis counter to 0
+    // Reset Redis unread cache counter back to 0
     try {
       const key = `${this.UNREAD_KEY_PREFIX}:${userId}`;
       await this.redisService.set(key, '0');

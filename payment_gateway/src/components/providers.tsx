@@ -4,13 +4,13 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import api from '../services/api';
 
-// 1. Initialize TanStack Query Client
+// 1. Initialize TanStack Query Client for local data-fetching caching state
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-      staleTime: 1000 * 60 * 5, // 5 minutes cache stale time
+      refetchOnWindowFocus: false, // Turn off refetching on click-away window refocus
+      retry: 1, // Only retry failed requests once before presenting error toast to user
+      staleTime: 1000 * 60 * 5, // Cache entries are valid for 5 minutes before marked stale
     },
   },
 });
@@ -35,12 +35,13 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Authentication state provider wrapping local JWT lifecycle checks
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Attempt to restore session on page mount
+  // Attempt to recover existing user session on browser page mount
   useEffect(() => {
     async function restoreSession() {
       const savedToken = localStorage.getItem('regilly_pg_token');
@@ -51,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(res.data);
         } catch (err) {
           console.error('Failed to restore session:', err);
-          logout();
+          logout(); // Clean invalid session items if token expired
         }
       }
       setIsLoading(false);
@@ -59,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     restoreSession();
   }, []);
 
+  // Post login credentials and save JWT token
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
@@ -67,13 +69,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('regilly_pg_token', access_token);
       setToken(access_token);
       setUser(userData);
-      queryClient.clear(); // Clear cache upon login
+      queryClient.clear(); // Flush cache on new session login
       return res.data;
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Submit candidate registration
   const register = async (name: string, email: string, password: string, role?: string) => {
     setIsLoading(true);
     try {
@@ -82,20 +85,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('regilly_pg_token', access_token);
       setToken(access_token);
       setUser(userData);
-      queryClient.clear();
+      queryClient.clear(); // Flush cache on new session registration
       return res.data;
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Clear local storage and reset auth state
   const logout = () => {
     localStorage.removeItem('regilly_pg_token');
     setToken(null);
     setUser(null);
-    queryClient.clear();
+    queryClient.clear(); // Flush old query cache to avoid data leaks
   };
 
+  // Refresh current user information (useful after updating password or settings)
   const refreshMe = async () => {
     try {
       const res = await api.get('/auth/me');
@@ -123,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// React context hook helper
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
@@ -131,6 +137,7 @@ export function useAuth() {
   return context;
 }
 
+// Wrap all providers under one root component
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>

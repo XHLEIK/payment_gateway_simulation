@@ -29,6 +29,8 @@ export class TransactionsController {
     private readonly usersService: UsersService,
   ) {}
 
+  // Retrieves all transactions. Standard users are forced to view only their own records,
+  // while Admin users can see everyone's logs.
   @Get()
   async findAll(
     @CurrentUser() user: any,
@@ -58,14 +60,14 @@ export class TransactionsController {
       sortOrder,
     };
 
-    // If the authenticated user is NOT an admin, force filter by their own userId
+    // Standard candidates are locked to their own transaction listings
     if (user.role !== UserRole.ADMIN) {
       filters.userId = user.userId;
     }
 
     const result = await this.transactionsService.findAll(filters);
 
-    // Filter properties returned to frontend (exposing referenceId instead of raw UUIDs for client layout)
+    // Map rows to a clean response. Admin users get the candidate details as well.
     return {
       items: result.items.map((item) => ({
         id: item.id,
@@ -91,11 +93,12 @@ export class TransactionsController {
     };
   }
 
+  // Admin: Get a list of all transactions with requested reversals awaiting approval
   @Get('pending-reversals')
   @Roles(UserRole.ADMIN)
   async getPendingReversals() {
     const txns = await this.transactionsService.findPendingReversals();
-    // Only return sender transactions (TXN-SND-*) to avoid duplicates
+    // We only return the sender side (TXN-SND-*) to avoid displaying duplicate rows in the Admin dashboard
     return txns
       .filter((t) => t.referenceId.startsWith('TXN-SND-'))
       .map((t) => ({
@@ -111,6 +114,7 @@ export class TransactionsController {
       }));
   }
 
+  // Admin: Get a list of all simulated transfers held in the PROCESSING queue
   @Get('processing-transfers')
   @Roles(UserRole.ADMIN)
   async getProcessingTransfers() {
@@ -125,11 +129,12 @@ export class TransactionsController {
     }));
   }
 
+  // Inspect details of a single transaction (includes full status audit trails)
   @Get(':id')
   async findOne(@CurrentUser() user: any, @Param('id') id: string) {
     const txn = await this.transactionsService.findOne(id);
     
-    // Ensure standard users cannot inspect other people's transactions
+    // Safety check: standard candidates cannot inspect other users' transaction details
     if (user.role !== UserRole.ADMIN && txn.userId !== user.userId) {
       throw new ForbiddenException('You are not authorized to view this transaction');
     }
@@ -162,9 +167,10 @@ export class TransactionsController {
   }
 
   // ============================================================
-  //  REVERSAL ENDPOINTS
+  //  REVERSAL ENDPOINTS (For P2P Transfer Undo Requests)
   // ============================================================
 
+  // Candidate: request reversal of a completed transfer
   @Post(':id/request-reversal')
   async requestReversal(
     @CurrentUser() user: any,
@@ -177,7 +183,7 @@ export class TransactionsController {
 
     const result = await this.transactionsService.requestReversal(id, user.userId, reason);
 
-    // Notify all admins about the reversal request
+    // Notify all admin users about the pending reversal claim
     const allUsers = await this.usersService.findAll();
     const adminIds = allUsers.filter((u) => u.role === UserRole.ADMIN).map((u) => u.id);
 
@@ -198,6 +204,7 @@ export class TransactionsController {
     };
   }
 
+  // Admin: Approve a reversal request (refunds the sender and debits the recipient)
   @Post(':id/approve-reversal')
   @Roles(UserRole.ADMIN)
   async approveReversal(
@@ -206,7 +213,7 @@ export class TransactionsController {
   ) {
     const result = await this.transactionsService.approveReversal(id, admin.userId);
 
-    // Notify both sender and receiver
+    // Send instant notifications to both candidate parties
     await this.notificationsService.create(
       result.senderTxn.userId,
       NotificationType.REVERSAL_APPROVED,
@@ -229,6 +236,7 @@ export class TransactionsController {
     };
   }
 
+  // Admin: Reject a reversal request
   @Post(':id/reject-reversal')
   @Roles(UserRole.ADMIN)
   async rejectReversal(
@@ -237,7 +245,7 @@ export class TransactionsController {
   ) {
     const txn = await this.transactionsService.rejectReversal(id, admin.userId);
 
-    // Notify the sender
+    // Notify the user who requested the reversal
     await this.notificationsService.create(
       txn.userId,
       NotificationType.REVERSAL_REJECTED,

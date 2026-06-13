@@ -23,23 +23,24 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import api from '../../services/api';
 import { 
-  Search, 
-  Download, 
   SlidersHorizontal, 
   ChevronLeft, 
   ChevronRight, 
   Loader2, 
   X,
-  RefreshCw,
   ArrowDownLeft,
   ArrowUpRight,
-  Check
+  Check,
+  Download
 } from 'lucide-react';
 
+// History Ledger Viewer Page.
+// Displays searchable, filterable logs of user payments, deposits, and transfers.
+// Lets users submit dispute resolution claims or request P2P rollback/reversal.
 export default function TransactionsPage() {
   const { user } = useAuth();
   
-  // Filtering, Pagination & Sorting State
+  // Filtering, Pagination & Sorting states
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
   const [status, setStatus] = useState('');
@@ -53,14 +54,14 @@ export default function TransactionsPage() {
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
   const [showFilters, setShowFilters] = useState(false);
 
-  // Reversal Request state
+  // Reversal Request modal state variables
   const [activeTxnForReversal, setActiveTxnForReversal] = useState<any | null>(null);
   const [reversalReason, setReversalReason] = useState('');
   const [reversalLoading, setReversalLoading] = useState(false);
   const [reversalError, setReversalError] = useState('');
   const [reversalSuccess, setReversalSuccess] = useState(false);
 
-  // Dispute Filing state
+  // Dispute Filing modal state variables
   const [activeTxnForDispute, setActiveTxnForDispute] = useState<any | null>(null);
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeEvidence, setDisputeEvidence] = useState('');
@@ -68,6 +69,7 @@ export default function TransactionsPage() {
   const [disputeError, setDisputeError] = useState('');
   const [disputeSuccess, setDisputeSuccess] = useState(false);
 
+  // Submit P2P rollback request to backend (Admins must approve this later)
   const handleRequestReversal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeTxnForReversal) return;
@@ -88,6 +90,7 @@ export default function TransactionsPage() {
     }
   };
 
+  // Submit dispute resolution complaint
   const handleFileDispute = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeTxnForDispute) return;
@@ -111,8 +114,9 @@ export default function TransactionsPage() {
     }
   };
 
-  // 1. Fetch transactions based on filter parameters
-  const { data, isLoading, refetch, isFetching } = useQuery({
+  // 1. Fetch transactions list using filtering hooks.
+  // Refetches automatically whenever sorting, page, or filters change.
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['transactions', page, status, type, from, to, minAmount, maxAmount, search, sortBy, sortOrder],
     queryFn: async () => {
       const res = await api.get('/transactions', {
@@ -147,6 +151,7 @@ export default function TransactionsPage() {
     setPage(1);
   };
 
+  // Click on a table head to toggle sorting direction or swap columns
   const handleSort = (field: string) => {
     if (sortBy === field) {
       setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC');
@@ -154,10 +159,10 @@ export default function TransactionsPage() {
       setSortBy(field);
       setSortOrder('DESC');
     }
-    setPage(1);
+    setPage(1); // Jump back to page 1 to review sorted entries
   };
 
-  // 2. Export to CSV via Authorized Fetch Blob download
+  // 2. Fetch binary report stream and download as CSV file directly in browser
   const handleExportCsv = async () => {
     try {
       const res = await api.get('/reports/download', {
@@ -171,13 +176,14 @@ export default function TransactionsPage() {
           search: search || undefined,
           format: 'csv',
         },
-        responseType: 'blob', // Parse response as binary CSV file
+        responseType: 'blob',
       });
       
       const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
       const downloadLink = document.createElement('a');
       downloadLink.href = blobUrl;
-      downloadLink.setAttribute('download', `regilly-transactions-report-${Date.now()}.csv`);
+      // APPSC formatted export filename
+      downloadLink.setAttribute('download', `appsc-transactions-report-${Date.now()}.csv`);
       document.body.appendChild(downloadLink);
       downloadLink.click();
       downloadLink.remove();
@@ -192,7 +198,7 @@ export default function TransactionsPage() {
 
   return (
     <LayoutShell>
-      {/* Title & Actions bar */}
+      {/* Title block */}
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-zinc-100">Transaction History</h2>
@@ -202,7 +208,7 @@ export default function TransactionsPage() {
           <Button 
             onClick={() => setShowFilters(!showFilters)} 
             variant="secondary" 
-            className="text-xs font-bold gap-1.5"
+            className="text-xs font-bold gap-1.5 cursor-pointer"
           >
             <SlidersHorizontal className="h-4 w-4" />
             {showFilters ? 'Hide Filters' : 'Filters'}
@@ -210,7 +216,7 @@ export default function TransactionsPage() {
           <Button 
             onClick={handleExportCsv} 
             variant="primary" 
-            className="text-xs font-bold gap-1.5 shadow-sm"
+            className="text-xs font-bold gap-1.5 shadow-sm cursor-pointer"
             disabled={txs.length === 0}
           >
             <Download className="h-4 w-4" />
@@ -219,7 +225,7 @@ export default function TransactionsPage() {
         </div>
       </div>
 
-      {/* Filter Sidebar / Collapsible Header */}
+      {/* Filter panel input cards */}
       {showFilters && (
         <Card className="mb-6 border border-zinc-900 bg-zinc-950/40">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -295,7 +301,7 @@ export default function TransactionsPage() {
                   onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                 />
               </div>
-              <Button onClick={handleResetFilters} variant="secondary" className="text-xs h-[38px] font-bold">
+              <Button onClick={handleResetFilters} variant="secondary" className="text-xs h-[38px] font-bold cursor-pointer">
                 Reset
               </Button>
             </div>
@@ -303,7 +309,7 @@ export default function TransactionsPage() {
         </Card>
       )}
 
-      {/* Main Table view */}
+      {/* Main Ledger data grid */}
       <Card className="border border-zinc-900 bg-zinc-950">
         <CardContent className="p-0">
           {isLoading ? (
@@ -393,6 +399,7 @@ export default function TransactionsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1.5">
+                            {/* P2P Rollback action button trigger: Only visible on successful outbox transfers */}
                             {tx.type === 'TRANSFER' && tx.status === 'SUCCESS' && tx.referenceId.startsWith('TXN-SND-') && (
                               <Button
                                 onClick={() => {
@@ -402,11 +409,12 @@ export default function TransactionsPage() {
                                   setReversalSuccess(false);
                                 }}
                                 variant="secondary"
-                                className="text-[10px] px-2.5 py-1 h-7 font-bold shrink-0 text-amber-500 hover:text-amber-400 border border-zinc-800 hover:bg-zinc-900"
+                                className="text-[10px] px-2.5 py-1 h-7 font-bold shrink-0 text-amber-500 hover:text-amber-400 border border-zinc-800 hover:bg-zinc-900 cursor-pointer"
                               >
                                 Rollback
                               </Button>
                             )}
+                            {/* Dispute trigger button: open dispute forms on any completed transaction */}
                             {tx.status !== 'FAILED' && (
                               <Button
                                 onClick={() => {
@@ -417,7 +425,7 @@ export default function TransactionsPage() {
                                   setDisputeSuccess(false);
                                 }}
                                 variant="ghost"
-                                className="text-[10px] px-2.5 py-1 h-7 font-bold border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 shrink-0"
+                                className="text-[10px] px-2.5 py-1 h-7 font-bold border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 shrink-0 cursor-pointer"
                               >
                                 Dispute
                               </Button>
@@ -433,7 +441,7 @@ export default function TransactionsPage() {
           )}
         </CardContent>
 
-        {/* Table footer / Pagination controls */}
+        {/* Footer controls with pagination triggers */}
         {!isLoading && txs.length > 0 && (
           <CardHeader className="border-t border-zinc-900/50 py-4 flex flex-row items-center justify-between">
             <span className="text-xs text-zinc-500 font-medium">
@@ -442,7 +450,7 @@ export default function TransactionsPage() {
             <div className="flex items-center gap-2">
               <Button
                 variant="secondary"
-                className="p-1.5 rounded-lg"
+                className="p-1.5 rounded-lg cursor-pointer"
                 onClick={() => setPage(Math.max(1, page - 1))}
                 disabled={page === 1}
               >
@@ -453,7 +461,7 @@ export default function TransactionsPage() {
               </span>
               <Button
                 variant="secondary"
-                className="p-1.5 rounded-lg"
+                className="p-1.5 rounded-lg cursor-pointer"
                 onClick={() => setPage(Math.min(totalPages, page + 1))}
                 disabled={page === totalPages}
               >
@@ -464,7 +472,7 @@ export default function TransactionsPage() {
         )}
       </Card>
 
-      {/* REVERSAL REQUEST MODAL */}
+      {/* MODAL: P2P TRANSFER ROLLBACK REQUEST FORM */}
       {activeTxnForReversal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
           <div className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
@@ -474,7 +482,7 @@ export default function TransactionsPage() {
                 onClick={() => setActiveTxnForReversal(null)} 
                 className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4.5 w-4.5" />
               </button>
             </div>
             
@@ -487,7 +495,7 @@ export default function TransactionsPage() {
                 <p className="text-xs text-zinc-400 px-2 leading-relaxed">
                   Your rollback claim for transfer {activeTxnForReversal.referenceId} has been filed. Admin approval is required.
                 </p>
-                <Button onClick={() => setActiveTxnForReversal(null)} variant="success" className="w-full mt-4 font-bold text-xs">
+                <Button onClick={() => setActiveTxnForReversal(null)} variant="success" className="w-full mt-4 font-bold text-xs cursor-pointer">
                   Done
                 </Button>
               </div>
@@ -518,14 +526,14 @@ export default function TransactionsPage() {
                     type="button" 
                     onClick={() => setActiveTxnForReversal(null)} 
                     variant="secondary" 
-                    className="flex-1 text-xs py-1.5 font-bold"
+                    className="flex-1 text-xs py-1.5 font-bold cursor-pointer"
                   >
                     Cancel
                   </Button>
                   <Button 
                     type="submit" 
                     variant="primary" 
-                    className="flex-1 text-xs py-1.5 font-bold" 
+                    className="flex-1 text-xs py-1.5 font-bold cursor-pointer" 
                     isLoading={reversalLoading}
                   >
                     Submit Request
@@ -537,7 +545,7 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {/* DISPUTE FILING MODAL */}
+      {/* MODAL: DISPUTE FILING ENTRY */}
       {activeTxnForDispute && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
           <div className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
@@ -547,7 +555,7 @@ export default function TransactionsPage() {
                 onClick={() => setActiveTxnForDispute(null)} 
                 className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4.5 w-4.5" />
               </button>
             </div>
             
@@ -560,7 +568,7 @@ export default function TransactionsPage() {
                 <p className="text-xs text-zinc-400 px-2 leading-relaxed">
                   Your dispute on transaction {activeTxnForDispute.referenceId} has been successfully filed. Support admins will review it.
                 </p>
-                <Button onClick={() => setActiveTxnForDispute(null)} variant="success" className="w-full mt-4 font-bold text-xs">
+                <Button onClick={() => setActiveTxnForDispute(null)} variant="success" className="w-full mt-4 font-bold text-xs cursor-pointer">
                   Close
                 </Button>
               </div>
@@ -598,14 +606,14 @@ export default function TransactionsPage() {
                     type="button" 
                     onClick={() => setActiveTxnForDispute(null)} 
                     variant="secondary" 
-                    className="flex-1 text-xs py-1.5 font-bold"
+                    className="flex-1 text-xs py-1.5 font-bold cursor-pointer"
                   >
                     Cancel
                   </Button>
                   <Button 
                     type="submit" 
                     variant="primary" 
-                    className="flex-1 text-xs py-1.5 font-bold" 
+                    className="flex-1 text-xs py-1.5 font-bold cursor-pointer" 
                     isLoading={disputeLoading}
                   >
                     File Dispute

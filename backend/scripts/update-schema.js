@@ -1,3 +1,6 @@
+// Migration support script to update existing database installations.
+// Adds dispute resolution features, audit tracking variables, transaction reversals,
+// and notification logs on top of the original schema layout.
 const { Client } = require('pg');
 
 async function updateSchema() {
@@ -13,6 +16,7 @@ async function updateSchema() {
     await client.connect();
     console.log('Connected to payment_gateway_db.');
 
+    // 1. Alter transactions to allow circular/reversal links (linked_transaction_id)
     console.log('Altering transactions table to add reversal columns...');
     await client.query(`
       ALTER TABLE transactions 
@@ -23,6 +27,7 @@ async function updateSchema() {
     `);
     console.log('Transactions table altered successfully.');
 
+    // 2. Create the disputes system table for managing customer complaints and chargebacks
     console.log('Creating disputes table...');
     await client.query(`
       CREATE TABLE IF NOT EXISTS disputes (
@@ -38,13 +43,15 @@ async function updateSchema() {
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
       
+      -- Partial index to speed up scanning active disputes (open complaints)
       CREATE INDEX IF NOT EXISTS idx_dispute_status ON disputes(status) WHERE status != 'RESOLVED';
       
-      -- Unique dispute per user per transaction
+      -- Prevent a user from opening multiple disputes on the exact same transaction
       CREATE UNIQUE INDEX IF NOT EXISTS idx_dispute_txn_user ON disputes(transaction_id, user_id);
     `);
     console.log('Disputes table created successfully.');
 
+    // 3. Create the notifications logging table (tracks push notification history)
     console.log('Creating notifications table...');
     await client.query(`
       CREATE TABLE IF NOT EXISTS notifications (
@@ -58,10 +65,12 @@ async function updateSchema() {
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
       
+      -- Index to load unread alerts quickly for dashboard badges
       CREATE INDEX IF NOT EXISTS idx_notification_user_unread ON notifications(user_id, is_read) WHERE is_read = FALSE;
     `);
     console.log('Notifications table created successfully.');
 
+    // 4. Create the daily transaction limit configs for users (fintech risk controls)
     console.log('Creating daily_limits table...');
     await client.query(`
       CREATE TABLE IF NOT EXISTS daily_limits (

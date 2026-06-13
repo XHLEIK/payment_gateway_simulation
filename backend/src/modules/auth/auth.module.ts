@@ -8,6 +8,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
+  // Load configuration, user lookup services, and JWT modules with dynamic environment secrets
   imports: [
     UsersModule,
     PassportModule,

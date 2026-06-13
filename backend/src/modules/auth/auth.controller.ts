@@ -9,17 +9,20 @@ import { Throttle } from '@nestjs/throttler';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // Post request to register a candidate
   @Post('register')
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
+  // Post request for authentication. Throttled to 5 attempts/min to block brute-force password scanning.
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: 60000 } }) // Limit login requests to 5 per minute
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
+  // Get current candidate's profile based on the JWT token in headers
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async me(@Request() req: any) {

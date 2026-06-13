@@ -2,16 +2,13 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
-  Inject,
-  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
 import { Refund, RefundStatus } from './entities/refund.entity';
 import { TransactionsService } from '../transactions/transactions.service';
-import { TransactionStatus } from '../transactions/entities/transaction.entity';
-import { NotificationsService } from '../notifications/notifications.service';
-import { NotificationType } from '../notifications/entities/notification.entity';
+import { TransactionStatus, TransactionType } from '../transactions/entities/transaction.entity';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 @Injectable()
 export class RefundsService {
@@ -20,10 +17,10 @@ export class RefundsService {
     private readonly refundRepository: Repository<Refund>,
     private readonly transactionsService: TransactionsService,
     private readonly dataSource: DataSource,
-    private readonly notificationsService: NotificationsService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
-  // 1. Request a refund (Initiates a PENDING refund)
+  // 1. Request a refund (Initiates a PENDING refund request)
   async request(dto: {
     transactionId: string;
     amount: number;
@@ -46,7 +43,7 @@ export class RefundsService {
       throw new BadRequestException('Refund amount cannot exceed original transaction amount');
     }
 
-    // Verify if there is already a PENDING or APPROVED refund for this transaction
+    // Accumulate existing approved and pending refunds to prevent double-refunding
     const existingRefunds = await this.refundRepository.find({
       where: { transactionId },
     });
@@ -101,22 +98,23 @@ export class RefundsService {
       refund.status = RefundStatus.APPROVED;
       refund.approvedById = adminId;
 
-      const saved = await refundRepo.save(refund);
+      const savedRefund = await refundRepo.save(refund);
 
-      // Fire notification to transaction owner
-      await this.notificationsService.create(
-        refund.transaction.userId,
-        NotificationType.REFUND_APPROVED,
-        'Refund Approved',
-        `Your refund of ₹${refund.amount.toFixed(2)} for transaction ${refund.transaction.referenceId} has been approved.`,
-        { refundId: refund.id, transactionId: refund.transactionId },
+      // Update daily aggregated stats to record this refund volume/count
+      const today = new Date().toISOString().split('T')[0];
+      await this.analyticsService.updateDailyStats(
+        today,
+        true,
+        refund.amount,
+        TransactionType.REFUND,
+        manager,
       );
 
-      return saved;
+      return savedRefund;
     });
   }
 
-  // 3. Reject a refund
+  // 3. Reject a refund claim
   async reject(refundId: string, adminId: string): Promise<Refund> {
     const refund = await this.refundRepository.findOne({ where: { id: refundId } });
     if (!refund) {
@@ -130,26 +128,10 @@ export class RefundsService {
     refund.status = RefundStatus.REJECTED;
     refund.approvedById = adminId;
 
-    const saved = await this.refundRepository.save(refund);
-
-    // Fire notification to transaction owner
-    try {
-      const txn = await this.transactionsService.findOne(refund.transactionId);
-      await this.notificationsService.create(
-        txn.userId,
-        NotificationType.REFUND_REJECTED,
-        'Refund Rejected',
-        `Your refund request of ₹${refund.amount.toFixed(2)} for transaction ${txn.referenceId} has been rejected.`,
-        { refundId: refund.id, transactionId: refund.transactionId },
-      );
-    } catch (err) {
-      // Non-critical
-    }
-
-    return saved;
+    return this.refundRepository.save(refund);
   }
 
-  // List all refunds
+  // Lists all refund applications, including original user profiles
   async findAll(): Promise<Refund[]> {
     return this.refundRepository.find({
       relations: { transaction: { user: true }, approvedBy: true },

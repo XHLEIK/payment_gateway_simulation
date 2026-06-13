@@ -24,12 +24,15 @@ export class RefundsController {
     private readonly transactionsService: TransactionsService,
   ) {}
 
+  // Route to request a refund. Authenticated users can request refunds for their own transactions.
   @Post('request')
   async requestRefund(
     @CurrentUser() user: any,
     @Body() body: { transactionId: string; amount: number; reason: string },
   ) {
     const txn = await this.transactionsService.findOne(body.transactionId);
+    
+    // Ensure standard users can only apply for refunds on their own transaction entries
     if (user.role !== UserRole.ADMIN && txn.userId !== user.userId) {
       throw new ForbiddenException('You can only request refunds for your own transactions');
     }
@@ -41,6 +44,7 @@ export class RefundsController {
     });
   }
 
+  // Admin route to approve a pending refund request
   @Post('approve/:id')
   @Roles(UserRole.ADMIN)
   async approveRefund(
@@ -52,12 +56,14 @@ export class RefundsController {
     return this.refundsService.approve(id, admin.userId, correlationId);
   }
 
+  // Admin route to reject a pending refund request
   @Post('reject/:id')
   @Roles(UserRole.ADMIN)
   async rejectRefund(@CurrentUser() admin: any, @Param('id') id: string) {
     return this.refundsService.reject(id, admin.userId);
   }
 
+  // Admin-only route to list all active/past refund requests
   @Get()
   @Roles(UserRole.ADMIN)
   async findAll() {

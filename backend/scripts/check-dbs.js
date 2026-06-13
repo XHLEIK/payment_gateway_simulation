@@ -1,3 +1,5 @@
+// Debug script to check what database environment variables Node is reading,
+// and what databases are currently active on the running PostgreSQL server.
 const { Client } = require('pg');
 
 async function checkDbs() {
@@ -8,22 +10,26 @@ async function checkDbs() {
   console.log('DB_USERNAME:', process.env.DB_USERNAME);
   console.log('DB_NAME:', process.env.DB_NAME);
 
+  // Connect to the default 'postgres' database first to inspect other databases
   const client = new Client({
     host: 'localhost',
     port: 5432,
     user: 'postgres',
     password: 'Subham@1234',
-    database: 'postgres', // Connect to default postgres DB
+    database: 'postgres', 
   });
 
   try {
     await client.connect();
     console.log('\n--- DATABASES ON POSTGRES ---');
+    
+    // Select non-template databases to see what's actually created
     const res = await client.query('SELECT datname FROM pg_database WHERE datistemplate = false');
     console.log(res.rows.map(r => r.datname));
   } catch (err) {
     console.error('Error listing databases:', err.message);
   } finally {
+    // Clean up connections
     await client.end();
   }
 }

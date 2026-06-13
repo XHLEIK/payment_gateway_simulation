@@ -9,6 +9,7 @@ import {
 import { Transaction } from '../../transactions/entities/transaction.entity';
 import { User } from '../../users/entities/user.entity';
 
+// Current resolution status of a refund claim
 export enum RefundStatus {
   PENDING = 'PENDING',
   APPROVED = 'APPROVED',
@@ -43,16 +44,19 @@ export class Refund {
   })
   status: RefundStatus;
 
+  // Stores the admin ID who approved or rejected the request
   @Column({ name: 'approved_by', nullable: true })
   approvedById: string;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt: Date;
 
+  // Many refunds can map to the same transaction (e.g. partial refunds)
   @ManyToOne(() => Transaction, (transaction) => transaction.refunds)
   @JoinColumn({ name: 'transaction_id' })
   transaction: Transaction;
 
+  // Tracks which Admin processed this refund
   @ManyToOne(() => User, (user) => user.approvedRefunds)
   @JoinColumn({ name: 'approved_by' })
   approvedBy: User;

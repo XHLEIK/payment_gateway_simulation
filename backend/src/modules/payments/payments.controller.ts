@@ -35,7 +35,7 @@ export class PaymentsController {
   // 1. Initiate Payment Checkout Order (Client request to create transaction + gateway order)
   @Post('initiate')
   @UseGuards(JwtAuthGuard)
-  @Throttle({ default: { limit: 10, ttl: 60000 } }) // Throttle checkout order requests
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // Throttle checkout order requests to prevent API spam
   async initiate(
     @CurrentUser() user: any,
     @Body() dto: InitiatePaymentDto,
@@ -48,7 +48,7 @@ export class PaymentsController {
       dto.requestId,
     );
 
-    // B. If transaction is already processed, return it directly
+    // B. If transaction is already processed, return it directly (idempotency safety)
     if (txn.status !== TransactionStatus.INITIATED) {
       return {
         transactionId: txn.id,
@@ -97,7 +97,7 @@ export class PaymentsController {
       };
     }
 
-    // Validate mock signature
+    // Validate mock signature to verify the client isn't sending forged parameters
     const isValid = await this.paymentsService.verifyPayment(dto.orderId, dto.signature, txn.amount);
     if (!isValid) {
       throw new BadRequestException('Invalid transaction signature');
@@ -135,6 +135,7 @@ export class PaymentsController {
       throw new UnauthorizedException('Missing signature header');
     }
 
+    // Verify webhook payload using the HMAC signature header
     const isValid = this.paymentsService.verifyWebhookSignature(payload, signature);
     if (!isValid) {
       throw new UnauthorizedException('Invalid webhook signature');
@@ -173,6 +174,7 @@ export class PaymentsController {
         today,
         status === TransactionStatus.SUCCESS,
         txn.amount,
+        txn.type,
         manager,
       );
     });
@@ -180,6 +182,7 @@ export class PaymentsController {
     return { received: true };
   }
 
+  // Create a pending request for money from another candidate
   @Post('requests')
   @UseGuards(JwtAuthGuard)
   async createRequest(
@@ -190,18 +193,21 @@ export class PaymentsController {
     return this.paymentsService.createRequest(user.userId, recipientEmail, amount);
   }
 
+  // Retrieve pending requests that the logged-in candidate has received (needs to pay)
   @Get('requests/received')
   @UseGuards(JwtAuthGuard)
   async getReceivedRequests(@CurrentUser() user: any) {
     return this.paymentsService.getReceivedRequests(user.userId);
   }
 
+  // Retrieve requests that the logged-in candidate has sent to others
   @Get('requests/sent')
   @UseGuards(JwtAuthGuard)
   async getSentRequests(@CurrentUser() user: any) {
     return this.paymentsService.getSentRequests(user.userId);
   }
 
+  // Approve a received request by entering the transaction PIN. Initiates a sorted-lock transfer.
   @Post('requests/:id/approve')
   @UseGuards(JwtAuthGuard)
   async approveRequest(
@@ -212,6 +218,7 @@ export class PaymentsController {
     return this.paymentsService.approveRequest(id, user.userId, pin);
   }
 
+  // Reject a received request
   @Post('requests/:id/reject')
   @UseGuards(JwtAuthGuard)
   async rejectRequest(
@@ -221,5 +228,3 @@ export class PaymentsController {
     return this.paymentsService.rejectRequest(id, user.userId);
   }
 }
-
-

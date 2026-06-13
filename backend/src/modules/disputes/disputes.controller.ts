@@ -21,6 +21,7 @@ import { DisputeStatus } from './entities/dispute.entity';
 export class DisputesController {
   constructor(private readonly disputesService: DisputesService) {}
 
+  // Post endpoint for candidates to log a dispute claim on a specific transaction
   @Post()
   async create(
     @CurrentUser() user: any,
@@ -34,6 +35,8 @@ export class DisputesController {
     );
   }
 
+  // Lists disputes. Restricts standard users to only their own claims,
+  // while allowing admins to view all claims across the portal.
   @Get()
   async findAll(
     @CurrentUser() user: any,
@@ -81,6 +84,7 @@ export class DisputesController {
     };
   }
 
+  // Admin route to update the dispute status (e.g. resolve and trigger wallet compensation)
   @Patch(':id/status')
   @Roles(UserRole.ADMIN)
   async updateStatus(

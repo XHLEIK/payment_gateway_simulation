@@ -7,6 +7,7 @@ import { Transaction, TransactionStatus, TransactionType } from '../transactions
 import { UsersService } from '../users/users.service';
 import { TransactionAudit } from '../transactions/entities/transaction-audit.entity';
 import { RedisService } from '../redis/redis.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { randomBytes } from 'crypto';
 
 @Injectable()
@@ -24,8 +25,10 @@ export class WalletsService {
     private readonly usersService: UsersService,
     private readonly dataSource: DataSource,
     private readonly redisService: RedisService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
+  // Retrieves the current balance for a specific user
   async getBalance(userId: string): Promise<number> {
     const wallet = await this.walletRepository.findOne({ where: { userId } });
     if (!wallet) {
@@ -34,12 +37,13 @@ export class WalletsService {
     return wallet.balance;
   }
 
+  // Atomically credits a wallet balance. Runs inside a transaction manager with SELECT FOR UPDATE.
   async credit(userId: string, amount: number, manager: EntityManager): Promise<Wallet> {
     if (amount <= 0) {
       throw new BadRequestException('Credit amount must be positive');
     }
 
-    // SELECT FOR UPDATE locking
+    // Pessimistic write lock keeps other transactions from modifying the balance concurrently
     const wallet = await manager.getRepository(Wallet).findOne({
       where: { userId },
       lock: { mode: 'pessimistic_write' },
@@ -49,16 +53,18 @@ export class WalletsService {
       throw new NotFoundException(`Wallet not found for user ${userId}`);
     }
 
+    // Standard rounding to 2 decimal places to avoid floating point issues
     wallet.balance = parseFloat((Number(wallet.balance) + amount).toFixed(2));
     return manager.getRepository(Wallet).save(wallet);
   }
 
+  // Atomically debits a wallet balance. Runs inside a transaction manager with SELECT FOR UPDATE.
   async debit(userId: string, amount: number, manager: EntityManager): Promise<Wallet> {
     if (amount <= 0) {
       throw new BadRequestException('Debit amount must be positive');
     }
 
-    // SELECT FOR UPDATE locking
+    // Acquire lock on the sender wallet row
     const wallet = await manager.getRepository(Wallet).findOne({
       where: { userId },
       lock: { mode: 'pessimistic_write' },
@@ -72,6 +78,7 @@ export class WalletsService {
       throw new BadRequestException('Insufficient wallet balance');
     }
 
+    // Rounding to 2 decimal places
     wallet.balance = parseFloat((Number(wallet.balance) - amount).toFixed(2));
     return manager.getRepository(Wallet).save(wallet);
   }
@@ -80,10 +87,7 @@ export class WalletsService {
   //  DAILY TRANSACTION LIMIT — Redis Sliding Window (O(1))
   // ============================================================
 
-  /**
-   * Check if a user's daily spending + proposed amount exceeds their limit.
-   * Uses Redis sliding window with DB fallback for resilience.
-   */
+  // Checks if user's daily spending limit is exceeded, using Redis first and falling back to SQL
   async checkDailyLimit(userId: string, amount: number): Promise<void> {
     const limit = await this.getDailyLimit(userId);
     const todayStr = new Date().toISOString().split('T')[0];
@@ -91,15 +95,14 @@ export class WalletsService {
 
     let todaySpent = 0;
 
-    // Try Redis O(1) lookup first
     try {
+      // O(1) fast lookup from Redis cache
       const cached = await this.redisService.get(key);
       if (cached !== null) {
         todaySpent = parseFloat(cached);
       } else {
-        // Fallback: aggregate from DB (prefix sum over today's successful debits)
+        // SQL fallback if the Redis key has expired or hasn't been set yet
         todaySpent = await this.calculateTodaySpend(userId, todayStr);
-        // Seed Redis for future O(1) reads
         await this.redisService.set(key, String(todaySpent), this.secondsUntilMidnight());
       }
     } catch (err) {
@@ -115,9 +118,7 @@ export class WalletsService {
     }
   }
 
-  /**
-   * After a successful debit/transfer, update the Redis sliding window counter.
-   */
+  // Increments the daily spending cache inside Redis upon successful transfer completion
   async incrementDailySpend(userId: string, amount: number): Promise<void> {
     const todayStr = new Date().toISOString().split('T')[0];
     const key = `${this.DAILY_SPEND_PREFIX}:${userId}:${todayStr}`;
@@ -125,24 +126,19 @@ export class WalletsService {
     try {
       const client = this.redisService.getClient();
       await client.incrbyfloat(key, amount);
-      // Set TTL to expire at midnight
-      await client.expire(key, this.secondsUntilMidnight());
+      await client.expire(key, this.secondsUntilMidnight()); // Auto-cleans at UTC midnight
     } catch (err) {
       this.logger.warn(`Failed to increment daily spend in Redis for user ${userId}`);
     }
   }
 
-  /**
-   * Get a user's daily limit (default: ₹50,000).
-   */
+  // Lookup the configured daily spend limit for a candidate (default limit is ₹50,000)
   async getDailyLimit(userId: string): Promise<number> {
     const record = await this.dailyLimitRepository.findOne({ where: { userId } });
     return record ? record.dailyLimit : 50000.00;
   }
 
-  /**
-   * Admin: set a user's daily limit.
-   */
+  // Admin feature: modify the spending limit for a user
   async setDailyLimit(userId: string, limit: number): Promise<DailyLimit> {
     if (limit <= 0) {
       throw new BadRequestException('Daily limit must be positive');
@@ -157,9 +153,7 @@ export class WalletsService {
     return this.dailyLimitRepository.save(record);
   }
 
-  /**
-   * Get today's spending summary for a user.
-   */
+  // Returns daily spending limits, current spend, and remaining allowance
   async getDailySpendSummary(userId: string): Promise<{
     limit: number;
     spent: number;
@@ -184,7 +178,7 @@ export class WalletsService {
     };
   }
 
-  /** DB fallback: sum today's successful outgoing transactions */
+  // Fallback SQL query aggregating all successful outgoing transactions for a user today
   private async calculateTodaySpend(userId: string, todayStr: string): Promise<number> {
     const startOfDay = new Date(todayStr + 'T00:00:00.000Z');
     const endOfDay = new Date(todayStr + 'T23:59:59.999Z');
@@ -203,7 +197,7 @@ export class WalletsService {
     return parseFloat(result?.total || '0');
   }
 
-  /** Seconds until midnight UTC */
+  // Returns exact seconds remaining until the next UTC midnight (used as Redis TTL)
   private secondsUntilMidnight(): number {
     const now = new Date();
     const midnight = new Date(now);
@@ -215,6 +209,7 @@ export class WalletsService {
   //  SEND MONEY — with Simulation Toggles
   // ============================================================
 
+  // Executes direct wallet-to-wallet P2P transfers using a serializable transaction block
   async sendMoney(
     senderId: string,
     recipientEmail: string,
@@ -228,7 +223,7 @@ export class WalletsService {
       throw new BadRequestException('Transfer amount must be greater than zero');
     }
 
-    // 1. Verify PIN
+    // 1. Verify transaction PIN
     await this.usersService.verifyPin(senderId, pin);
 
     // 2. Find recipient
@@ -241,7 +236,7 @@ export class WalletsService {
       throw new BadRequestException('Cannot transfer money to yourself');
     }
 
-    // 3. Check Idempotency for this sender request
+    // 3. Idempotency check to prevent processing double clicks
     const existing = await this.transactionRepository.findOne({
       where: { requestId, userId: senderId },
     });
@@ -255,20 +250,19 @@ export class WalletsService {
       };
     }
 
-    // 4. Check daily transaction limit before proceeding
+    // 4. Ensure transfer doesn't exceed user's daily spend limit
     await this.checkDailyLimit(senderId, amount);
 
-    // 5. Perform direct transfer inside SERIALIZABLE transaction block
+    // 5. Run direct transfer inside a SERIALIZABLE transaction block to guarantee correctness
     return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
       const walletRepo = manager.getRepository(Wallet);
       const transactionRepo = manager.getRepository(Transaction);
       const auditRepo = manager.getRepository(TransactionAudit);
 
-      // Generate unique transaction references for audit trail separation
       const refIdSender = `TXN-SND-${randomBytes(4).toString('hex').toUpperCase()}`;
       const refIdRecipient = `TXN-RCV-${randomBytes(4).toString('hex').toUpperCase()}`;
 
-      // ---- SIMULATE FAILED PAYMENT ----
+      // ---- SIMULATE FAILED PAYMENT (for review demonstration) ----
       if (simulateFailure) {
         const senderTxn = transactionRepo.create({
           referenceId: refIdSender,
@@ -292,7 +286,6 @@ export class WalletsService {
         });
         await transactionRepo.save(recipientTxn);
 
-        // Update sender's linked ID
         savedSenderTxn.linkedTransactionId = recipientTxn.id;
         await transactionRepo.save(savedSenderTxn);
 
@@ -314,7 +307,7 @@ export class WalletsService {
         };
       }
 
-      // ---- SIMULATE PROCESSING ----
+      // ---- SIMULATE PROCESSING (holds transfer in admin review queue) ----
       if (simulateProcessing) {
         const senderTxn = transactionRepo.create({
           referenceId: refIdSender,
@@ -359,12 +352,12 @@ export class WalletsService {
         };
       }
 
-      // ---- NORMAL TRANSFER (existing logic) ----
+      // ---- NORMAL P2P TRANSFER WORKFLOW ----
 
-      // Lock order: sort userIds alphabetically to prevent transfer deadlocks
+      // DEADLOCK PREVENTION: Always sort wallet IDs alphabetically before acquiring locks
       const sortedUserIds = [senderId, recipient.id].sort();
 
-      // Acquire locks in order
+      // Acquire locks in sorted order
       const walletA = await walletRepo.findOne({
         where: { userId: sortedUserIds[0] },
         lock: { mode: 'pessimistic_write' },
@@ -378,23 +371,22 @@ export class WalletsService {
         throw new NotFoundException('One or more wallets not found');
       }
 
-      // Map locked rows
+      // Map back to sender and receiver
       const senderWallet = walletA.userId === senderId ? walletA : walletB;
       const recipientWallet = walletA.userId === recipient.id ? walletA : walletB;
 
-      // Check balance
       if (senderWallet.balance < amount) {
         throw new BadRequestException('Insufficient wallet balance');
       }
 
-      // Perform updates
+      // Execute balance updates
       senderWallet.balance = parseFloat((Number(senderWallet.balance) - amount).toFixed(2));
       recipientWallet.balance = parseFloat((Number(recipientWallet.balance) + amount).toFixed(2));
 
       await walletRepo.save(senderWallet);
       await walletRepo.save(recipientWallet);
 
-      // Create sender DEBIT transaction
+      // Log the sender transaction row
       const senderTxn = transactionRepo.create({
         referenceId: refIdSender,
         userId: senderId,
@@ -406,7 +398,7 @@ export class WalletsService {
       });
       const savedSenderTxn = await transactionRepo.save(senderTxn);
 
-      // Create recipient CREDIT transaction
+      // Log the recipient transaction row
       const recipientTxn = transactionRepo.create({
         referenceId: refIdRecipient,
         userId: recipient.id,
@@ -419,11 +411,11 @@ export class WalletsService {
       });
       const savedRecipientTxn = await transactionRepo.save(recipientTxn);
 
-      // Link sender to receiver
+      // Link transactions for audit traceability
       savedSenderTxn.linkedTransactionId = savedRecipientTxn.id;
       await transactionRepo.save(savedSenderTxn);
 
-      // Log audit records
+      // Write to transaction audit logs
       const auditSender = auditRepo.create({
         transactionId: savedSenderTxn.id,
         fromStatus: null,
@@ -432,8 +424,18 @@ export class WalletsService {
       } as any);
       await auditRepo.save(auditSender);
 
-      // Update Redis daily spend counter
+      // Update Redis daily spending sliding window
       await this.incrementDailySpend(senderId, amount);
+
+      // Update pre-aggregated daily telemetry volume and transfer counts
+      const today = new Date().toISOString().split('T')[0];
+      await this.analyticsService.updateDailyStats(
+        today,
+        true,
+        amount,
+        TransactionType.TRANSFER,
+        manager,
+      );
 
       return {
         message: 'Funds transferred successfully',
@@ -448,9 +450,7 @@ export class WalletsService {
   //  PROCESSING TRANSFER APPROVAL (Admin)
   // ============================================================
 
-  /**
-   * Admin approves a PROCESSING transfer: executes actual wallet operations.
-   */
+  // Approves a processing transfer, shifting it to success and modifying wallet balances
   async approveProcessingTransfer(transactionId: string, adminId: string): Promise<any> {
     return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
       const txnRepo = manager.getRepository(Transaction);
@@ -470,7 +470,6 @@ export class WalletsService {
         throw new BadRequestException('Only TRANSFER transactions can be approved from processing queue');
       }
 
-      // Find linked receiver transaction
       const receiverTxn = senderTxn.linkedTransactionId
         ? await txnRepo.findOne({ where: { id: senderTxn.linkedTransactionId } })
         : await txnRepo.findOne({ where: { requestId: senderTxn.requestId + '-rcv' } });
@@ -483,7 +482,7 @@ export class WalletsService {
       const receiverId = receiverTxn.userId;
       const amount = senderTxn.amount;
 
-      // Sorted-key lock to prevent deadlocks
+      // Sorted-key locks to prevent transfer deadlocks
       const sortedUserIds = [senderId, receiverId].sort();
       const walletA = await walletRepo.findOne({
         where: { userId: sortedUserIds[0] },
@@ -505,14 +504,14 @@ export class WalletsService {
         throw new BadRequestException(`Sender has insufficient balance (₹${senderWallet.balance}) for ₹${amount}`);
       }
 
-      // Execute wallet operations
+      // Deduct sender balance and add to receiver
       senderWallet.balance = parseFloat((Number(senderWallet.balance) - amount).toFixed(2));
       receiverWallet.balance = parseFloat((Number(receiverWallet.balance) + amount).toFixed(2));
 
       await walletRepo.save(senderWallet);
       await walletRepo.save(receiverWallet);
 
-      // Transition to SUCCESS
+      // Update status to SUCCESS
       senderTxn.status = TransactionStatus.SUCCESS;
       senderTxn.balanceAfter = senderWallet.balance;
       receiverTxn.status = TransactionStatus.SUCCESS;
@@ -521,7 +520,7 @@ export class WalletsService {
       await txnRepo.save(senderTxn);
       await txnRepo.save(receiverTxn);
 
-      // Audit logs
+      // Save audits
       for (const txn of [senderTxn, receiverTxn]) {
         const audit = auditRepo.create({
           transactionId: txn.id,
@@ -532,8 +531,18 @@ export class WalletsService {
         await auditRepo.save(audit);
       }
 
-      // Update daily spend
+      // Add to daily limit cache
       await this.incrementDailySpend(senderId, amount);
+
+      // Record successful transfer in daily stats telemetry
+      const today = new Date().toISOString().split('T')[0];
+      await this.analyticsService.updateDailyStats(
+        today,
+        true,
+        amount,
+        TransactionType.TRANSFER,
+        manager,
+      );
 
       this.logger.log(`Processing transfer ${transactionId} approved by admin ${adminId}`);
 
@@ -545,9 +554,7 @@ export class WalletsService {
     });
   }
 
-  /**
-   * Admin rejects a PROCESSING transfer: marks both as FAILED.
-   */
+  // Reject a processing transfer (marks it failed, doesn't move balances)
   async rejectProcessingTransfer(transactionId: string, adminId: string): Promise<any> {
     return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
       const txnRepo = manager.getRepository(Transaction);
@@ -566,7 +573,7 @@ export class WalletsService {
         ? await txnRepo.findOne({ where: { id: senderTxn.linkedTransactionId } })
         : await txnRepo.findOne({ where: { requestId: senderTxn.requestId + '-rcv' } });
 
-      // Mark both as FAILED
+      // Mark both sides as failed
       senderTxn.status = TransactionStatus.FAILED;
       await txnRepo.save(senderTxn);
 
@@ -590,6 +597,7 @@ export class WalletsService {
     });
   }
 
+  // Fetch transaction history, filtering out internal steps and formatted for layout
   async getHistory(userId: string): Promise<any[]> {
     const txs = await this.transactionRepository.find({
       where: [

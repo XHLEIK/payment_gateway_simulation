@@ -14,18 +14,18 @@ import {
   Activity, 
   CheckCircle2, 
   XCircle,
-  Clock,
-  ExternalLink,
   ChevronRight,
   ShieldCheck,
   Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 
+// Candidate and Admin landing dashboard page.
+// Renders wallet balance metrics, transaction history summaries, and admin telemetry statistics.
 export default function DashboardPage() {
   const { user } = useAuth();
 
-  // 1. Fetch Wallet Balance (For all users)
+  // 1. Fetch current wallet balance. Executes on mount for all logged-in accounts.
   const { data: balanceData, isLoading: balanceLoading } = useQuery({
     queryKey: ['wallet-balance'],
     queryFn: async () => {
@@ -34,7 +34,7 @@ export default function DashboardPage() {
     },
   });
 
-  // 2. Fetch Recent Transactions (Scoped by role in backend automatically)
+  // 2. Fetch the 5 most recent transactions (backend filters user transactions automatically)
   const { data: txsData, isLoading: txsLoading } = useQuery({
     queryKey: ['recent-transactions'],
     queryFn: async () => {
@@ -43,8 +43,8 @@ export default function DashboardPage() {
     },
   });
 
-  // 3. Fetch Analytics Summary (Admin only)
-  const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
+  // 3. Fetch weekly aggregate metrics. Only runs if logged in as admin.
+  const { data: analyticsData } = useQuery({
     queryKey: ['admin-analytics'],
     queryFn: async () => {
       const res = await api.get('/analytics/summary?period=weekly');
@@ -58,7 +58,7 @@ export default function DashboardPage() {
 
   return (
     <LayoutShell>
-      {/* Welcome banner */}
+      {/* Welcome banner displaying user's name */}
       <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-zinc-100">
@@ -69,6 +69,7 @@ export default function DashboardPage() {
           </p>
         </div>
         
+        {/* Render a badge if the logged-in user is a portal administrator */}
         {user?.role === 'admin' && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-xs font-bold text-indigo-400 uppercase tracking-wider">
             <ShieldCheck className="h-4 w-4" />
@@ -77,7 +78,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Admin stats widgets */}
+      {/* Admin stats widgets (Total volume, Success rate, counters) */}
       {user?.role === 'admin' && analyticsData && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card className="bg-zinc-950 border border-zinc-900 shadow-sm">
@@ -142,9 +143,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Main Grid split */}
+      {/* Main Grid layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left column: balance & quick actions */}
         <div className="flex flex-col gap-8 lg:col-span-1">
           {/* Wallet Balance Card */}
           <Card className="relative overflow-hidden bg-gradient-to-br from-indigo-950/40 via-zinc-950 to-zinc-950 border border-zinc-900 shadow-lg">
@@ -168,14 +168,14 @@ export default function DashboardPage() {
             </CardContent>
             <CardHeader className="border-t border-zinc-900/50 pt-4 flex flex-row gap-3">
               <Link href="/wallet" className="flex-1">
-                <Button variant="primary" className="w-full text-xs py-2 font-bold shadow-md">
+                <Button variant="primary" className="w-full text-xs py-2 font-bold shadow-md cursor-pointer">
                   Recharge Portal
                 </Button>
               </Link>
             </CardHeader>
           </Card>
 
-          {/* Quick Access Info Card */}
+          {/* Guidelines info card */}
           <Card className="bg-zinc-950 border border-zinc-900">
             <CardHeader>
               <CardTitle className="text-base font-bold">Regilly Gateways</CardTitle>
@@ -204,7 +204,7 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Right column: Recent Transactions list */}
+        {/* Right column: Recent Transactions table */}
         <div className="flex flex-col gap-6 lg:col-span-2">
           <Card className="bg-zinc-950 border border-zinc-900 h-full flex flex-col justify-between">
             <div>
@@ -214,7 +214,7 @@ export default function DashboardPage() {
                   <CardDescription className="text-xs">Latest activity logs in this portal session</CardDescription>
                 </div>
                 <Link href="/transactions">
-                  <Button variant="ghost" className="text-xs gap-1 font-bold">
+                  <Button variant="ghost" className="text-xs gap-1 font-bold cursor-pointer">
                     View History
                     <ChevronRight className="h-4 w-4" />
                   </Button>
@@ -233,7 +233,7 @@ export default function DashboardPage() {
                 ) : (
                   <div className="divide-y divide-zinc-900">
                     {recentTxs.map((tx: any) => {
-                      const isCredit = tx.type === 'CREDIT';
+                      const isCredit = tx.type === 'CREDIT' || tx.type === 'TRANSFER_CREDIT';
                       const isSuccess = tx.status === 'SUCCESS';
                       const isFailed = tx.status === 'FAILED';
                       const isRefunded = tx.status === 'REFUNDED';
@@ -248,7 +248,12 @@ export default function DashboardPage() {
                             </div>
                             <div className="flex flex-col">
                               <span className="text-sm font-bold text-zinc-200">
-                                {isCredit ? 'Deposit (Card Recharge)' : 'Portal Debit (Payment)'}
+                                {tx.type === 'CREDIT' && 'Admin Deposit'}
+                                {tx.type === 'TRANSFER_CREDIT' && 'Received Transfer'}
+                                {tx.type === 'TRANSFER' && 'Sent Transfer'}
+                                {tx.type === 'DEBIT' && 'Portal Debit'}
+                                {tx.type === 'PAYMENT' && 'Checkout Payment'}
+                                {tx.type === 'REFUND' && 'Refund'}
                               </span>
                               <span className="text-xs text-zinc-500 font-mono">
                                 {tx.referenceId} • {new Date(tx.createdAt).toLocaleDateString('en-IN', {
@@ -262,7 +267,7 @@ export default function DashboardPage() {
                             <span className={`text-sm font-black ${
                               isCredit ? 'text-emerald-400' : 'text-zinc-200'
                             }`}>
-                              {isCredit ? '+' : '-'}₹{tx.amount.toFixed(2)}
+                              {isCredit ? '+' : '-'}₹{Number(tx.amount).toFixed(2)}
                             </span>
                             
                             <Badge variant={
