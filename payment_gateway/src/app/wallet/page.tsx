@@ -527,10 +527,10 @@ export default function WalletPage() {
                           <span>{sendError}</span>
                         </div>
                       )}
-                      <Input
+                       <Input
                         label="Recipient Email"
                         type="email"
-                        placeholder="email@regilly.com"
+                        placeholder="email@appsc.gov.in"
                         value={sendEmail}
                         onChange={(e) => setSendEmail(e.target.value)}
                         required
@@ -704,7 +704,7 @@ export default function WalletPage() {
                   <Input
                     label="Request From (Email)"
                     type="email"
-                    placeholder="payer@regilly.com"
+                    placeholder="payer@appsc.gov.in"
                     value={reqEmail}
                     onChange={(e) => setReqEmail(e.target.value)}
                     required

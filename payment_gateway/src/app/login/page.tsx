@@ -55,12 +55,12 @@ export default function LoginPage() {
   // Utility to prefill inputs with default seed values (makes grading/testing fast)
   const prefill = (type: 'user' | 'admin') => {
     if (type === 'admin') {
-      setEmail('admin@regilly.com');
+      setEmail('admin@appsc.gov.in');
       setPassword('Subham@1234');
       setName('System Administrator');
       setRole('admin');
     } else {
-      setEmail('user@regilly.com');
+      setEmail('user@appsc.gov.in');
       setPassword('Subham@1234');
       setName('Subham Bose');
       setRole('user');
@@ -141,7 +141,7 @@ export default function LoginPage() {
               <Input
                 label="Email Address"
                 type="email"
-                placeholder="name@regilly.com"
+                placeholder="name@appsc.gov.in"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
