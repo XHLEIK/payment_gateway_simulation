@@ -32,4 +32,9 @@ export default () => ({
     // Secret key used to compute HMAC SHA-256 signatures for outgoing webhooks
     secret: process.env.WEBHOOK_SECRET || 'DEVELOPMENT_WEBHOOK_SECRET_REPLACE_IN_PRODUCTION',
   },
+  
+  turnstile: {
+    secretKey: process.env.TURNSTILE_SECRET_KEY || '1x00000000000000000000000000000000UNSHIELD',
+    siteKey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA',
+  },
 });

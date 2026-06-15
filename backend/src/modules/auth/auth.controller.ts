@@ -1,38 +1,148 @@
-import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Req, Res, Query, HttpStatus, HttpCode } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RateLimiterService } from './rate-limiter.service';
 import { Throttle } from '@nestjs/throttler';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly rateLimiterService: RateLimiterService,
+  ) {}
 
-  // Post request to register a candidate
+  /**
+   * Helper to extract client IP address accurately.
+   */
+  private getClientIp(req: any): string {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (forwarded) {
+      return (typeof forwarded === 'string' ? forwarded : forwarded[0]).split(',')[0].trim();
+    }
+    return req.ip || '127.0.0.1';
+  }
+
   @Post('register')
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(
+    @Body() dto: RegisterDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const ip = this.getClientIp(req);
+    const result = await this.authService.register(dto, ip);
+
+    // Set HTTP-Only session cookie
+    res.cookie('regilly_session', result.session.id, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+      expires: result.session.expiresAt,
+    });
+
+    return {
+      user: result.user,
+      csrfToken: result.session.csrfToken,
+      access_token: result.session.id, // Support E2E tests and Bearer token client compatibility
+    };
   }
 
-  // Post request for authentication. Throttled to 5 attempts/min to block brute-force password scanning.
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 100, ttl: 60000 } }) // Allow custom Redis-backed RateLimiterService to enforce the actual, granular limits
+  async login(
+    @Body() dto: LoginDto,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const ip = this.getClientIp(req);
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    const result = await this.authService.login(dto, ip, userAgent);
+
+    // Set HTTP-Only session cookie
+    res.cookie('regilly_session', result.session.id, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+      expires: result.session.expiresAt,
+    });
+
+    return {
+      user: result.user,
+      csrfToken: result.session.csrfToken,
+      access_token: result.session.id, // Support E2E tests and Bearer token client compatibility
+    };
   }
 
-  // Get current candidate's profile based on the JWT token in headers
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async logout(
+    @Req() req: any,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const sessionId = req.cookies ? req.cookies['regilly_session'] : null;
+    await this.authService.logout(sessionId, req.user.id);
+
+    // Clear HTTP-Only session cookie
+    res.clearCookie('regilly_session', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+    });
+
+    return { success: true };
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  async me(@Request() req: any) {
-    const user = await this.authService.validateUserById(req.user.userId);
+  async me(@Req() req: any) {
+    const user = await this.authService.validateUserById(req.user.id);
     return {
       id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
       createdAt: user.createdAt,
+      csrfToken: req.session ? req.session.csrf_token : null,
     };
+  }
+
+  @Get('csrf')
+  async getCsrf(
+    @Req() req: any,
+    @Res() res: any,
+  ) {
+    const sessionId = req.cookies ? req.cookies['regilly_session'] : null;
+    if (!sessionId) {
+      return res.status(HttpStatus.OK).json({ csrfToken: null });
+    }
+
+    const sessionStr = await this.rateLimiterService['redisService'].get(`session:${sessionId}`);
+    if (!sessionStr) {
+      return res.status(HttpStatus.OK).json({ csrfToken: null });
+    }
+
+    try {
+      const session = JSON.parse(sessionStr);
+      return res.status(HttpStatus.OK).json({ csrfToken: session.csrf_token });
+    } catch (e) {
+      return res.status(HttpStatus.OK).json({ csrfToken: null });
+    }
+  }
+
+  @Get('captcha-required')
+  async checkCaptchaRequired(
+    @Query('email') email: string,
+    @Req() req: any,
+  ) {
+    const ip = this.getClientIp(req);
+    const required = await this.rateLimiterService.isCaptchaRequired(ip, email || '');
+    return { captchaRequired: required };
   }
 }

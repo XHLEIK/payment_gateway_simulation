@@ -1,4 +1,4 @@
-import { IsEmail, IsString } from 'class-validator';
+import { IsEmail, IsString, IsOptional } from 'class-validator';
 
 // Data Transfer Object for validating candidate and admin logins.
 export class LoginDto {
@@ -7,4 +7,8 @@ export class LoginDto {
 
   @IsString()
   password: string;
+
+  @IsString()
+  @IsOptional()
+  captchaToken?: string;
 }

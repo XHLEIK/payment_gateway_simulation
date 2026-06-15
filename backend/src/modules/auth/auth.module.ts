@@ -1,30 +1,37 @@
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { UsersModule } from '../users/users.module';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import { JwtStrategy } from './strategies/jwt.strategy';
+import { CaptchaService } from './captcha.service';
+import { PasswordSecurityService } from './password-security.service';
+import { RateLimiterService } from './rate-limiter.service';
+import { AuditLoggerService } from './audit-logger.service';
+import { BotDetectionService } from './bot-detection.service';
 
 @Module({
-  // Load configuration, user lookup services, and JWT modules with dynamic environment secrets
   imports: [
     UsersModule,
     PassportModule,
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('jwt.secret'),
-        signOptions: {
-          expiresIn: configService.get<any>('jwt.expiresIn', '24h'),
-        },
-      }),
-    }),
+    ConfigModule,
   ],
-  providers: [AuthService, JwtStrategy],
+  providers: [
+    AuthService,
+    CaptchaService,
+    PasswordSecurityService,
+    RateLimiterService,
+    AuditLoggerService,
+    BotDetectionService,
+  ],
   controllers: [AuthController],
-  exports: [AuthService],
+  exports: [
+    AuthService,
+    CaptchaService,
+    PasswordSecurityService,
+    RateLimiterService,
+    AuditLoggerService,
+    BotDetectionService,
+  ],
 })
 export class AuthModule {}

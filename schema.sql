@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     gateway_payment_id VARCHAR(100), -- ID returned upon successful gateway clearing
     request_id VARCHAR(255) UNIQUE, -- Idempotency key supplied by the client
     balance_after NUMERIC(15, 2), -- Snapshotted wallet balance after the transaction completes
+    linked_transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL, -- Circular/reversal link
+    reversal_reason TEXT, -- Reversal audit explanation
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -94,6 +96,43 @@ CREATE TABLE IF NOT EXISTS payment_requests (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 8. Disputes Table
+-- Manages customer complaints, chargebacks, and payment rollbacks.
+CREATE TABLE IF NOT EXISTS disputes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    evidence TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'OPEN',
+    admin_notes TEXT,
+    resolved_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9. Notifications Table
+-- Tracks candidate and admin notification histories.
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    metadata JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 10. Daily Limits Table
+-- Tracks user transaction ceilings for risk control.
+CREATE TABLE IF NOT EXISTS daily_limits (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    daily_limit NUMERIC(15, 2) NOT NULL DEFAULT 50000.00,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================================
 -- DATABASE INDEXES (Performance Optimizations)
 -- ============================================================================
@@ -110,6 +149,15 @@ CREATE INDEX IF NOT EXISTS idx_txn_gateway_order ON transactions (gateway_order_
 -- Indexes for fast lookup on received and sent payment requests
 CREATE INDEX IF NOT EXISTS idx_pay_req_payer ON payment_requests (payer_id, status);
 CREATE INDEX IF NOT EXISTS idx_pay_req_payee ON payment_requests (payee_id, status);
+
+-- Index for open complaints
+CREATE INDEX IF NOT EXISTS idx_dispute_status ON disputes(status) WHERE status != 'RESOLVED';
+
+-- Prevent multiple disputes on a single transaction
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dispute_txn_user ON disputes(transaction_id, user_id);
+
+-- Index for notification counts
+CREATE INDEX IF NOT EXISTS idx_notification_user_unread ON notifications(user_id, is_read) WHERE is_read = FALSE;
 
 -- ============================================================================
 -- INITIAL SEED DATA (Standard passwords: 'Subham@1234')

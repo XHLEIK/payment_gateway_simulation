@@ -11,11 +11,14 @@ export class RegisterDto {
 
   // Enforces a minimum password length to reduce vulnerable credentials
   @IsString()
-  @MinLength(6, { message: 'Password must be at least 6 characters long' })
+  @MinLength(12, { message: 'Password must be at least 12 characters long' })
   password: string;
 
   // Role selection. Optional; defaults to 'USER' in users.service
   @IsEnum(UserRole)
   @IsOptional()
   role?: UserRole;
+
+  @IsString()
+  captchaToken: string;
 }

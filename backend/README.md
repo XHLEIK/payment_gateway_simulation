@@ -25,7 +25,7 @@ This is the NestJS backend API service for the **Payment Gateway & Wallet Manage
 - **Framework**: NestJS v11.x (TypeScript)
 - **Database ORM**: TypeORM v0.3.x with PostgreSQL Driver
 - **Data Stores**: PostgreSQL (v16+) & Redis (ioredis client)
-- **Security**: Passport JWT guards, Bcrypt (10 rounds) passwords & PIN hashing, Crypto HMAC
+- **Security**: Redis-backed HTTP-Only session cookies (rotated and secured), CSRF validation middleware, Cloudflare Turnstile, Bcrypt (10 rounds) passwords & PIN hashing, Crypto HMAC
 - **Testing**: Jest (Unit & E2E Integration)
 
 ---
@@ -45,14 +45,20 @@ backend/
 ├── src/                        # NestJS Application Source
 │   ├── main.ts                 # Bootstraps application & binds middlewares
 │   ├── app.module.ts           # Imports TypeORM, RedisConfig, Throttler, and domain modules
+│   ├── common/
+│   │   ├── guards/
+│   │   │   └── jwt-auth.guard.ts  # Session Auth Guard verifying cookies against Redis
+│   │   └── middleware/
+│   │       ├── correlation-id.middleware.ts
+│   │       └── csrf.middleware.ts   # Middleware validating CSRF tokens for write methods
 │   └── modules/                # Core domain modules
-│       ├── auth/               # User logins, profiles, and JWT Guards
+│       ├── auth/               # Logins, registrations, Captcha, PasswordSecurity, RateLimiter, AuditLogger
 │       ├── wallets/            # Balance modifications, transfers, PIN checks
 │       ├── transactions/       # Transactions creation, query builder, state machine
 │       ├── payments/           # Orders generation, HMAC signatures, webhooks, requests
 │       ├── analytics/          # Daily aggregations & Redis caching logic
 │       └── redis/              # Configures connection client wrapper
-└── test/                       # E2E Integrations (e.g. p2p.e2e-spec.ts)
+└── test/                       # E2E Integrations (e.g. security.e2e-spec.ts, p2p.e2e-spec.ts)
 ```
 
 ---
@@ -72,14 +78,14 @@ DB_USERNAME=postgres
 DB_PASSWORD=your_db_password
 DB_NAME=payment_gateway_db
 
-# Redis Caching Configuration
+# Redis Caching & Session Configuration
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 
-# Cryptographic Keys
-JWT_SECRET=your_jwt_secret_key
-JWT_EXPIRES_IN=24h
+# Cryptographic Keys & Bot Protection
 WEBHOOK_SECRET=your_webhook_secret_key
+TURNSTILE_SECRET_KEY=1x00000000000000000000000000000000UNSHIELD
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA
 ```
 
 ---
@@ -116,9 +122,10 @@ The backend REST API will boot and listen on `http://localhost:3001/api`.
 
 ## 🧪 Tests Validation
 
-Run the Jest integration test suite to verify concurrency controls, authentication, and state progression:
+Run the Jest integration test suite to verify security guards, concurrency controls, and state progression:
 
 ```bash
-# Run End-To-End (E2E) integration tests
+# Run End-To-End (E2E) integration & security tests
 npm run test:e2e
 ```
+

@@ -1,9 +1,14 @@
+import * as path from 'path';
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { ConfigService } from '@nestjs/config';
+import { RedisService } from '../src/modules/redis/redis.service';
+import { CaptchaService } from '../src/modules/auth/captcha.service';
 
 // End-to-End integration suite testing the P2P money transfers,
 // security PIN locking, settings resets, and payment request logic.
@@ -25,7 +30,12 @@ describe('P2P & PIN Security (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(CaptchaService)
+      .useValue({
+        verifyToken: async () => true, // Mock CAPTCHA verification to pass during tests
+      })
+      .compile();
 
     const configService = moduleFixture.get(ConfigService);
     console.log('--- TEST DB CONFIG ---');
@@ -38,6 +48,18 @@ describe('P2P & PIN Security (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
+    // Clear Redis keys to prevent lockout / throttling issues during test setup
+    const redis = moduleFixture.get(RedisService);
+    const client = redis.getClient();
+    const keys = await client.keys('rate:*');
+    if (keys.length > 0) await client.del(...keys);
+    const failKeys = await client.keys('fail:*');
+    if (failKeys.length > 0) await client.del(...failKeys);
+    const lockKeys = await client.keys('lock:*');
+    if (lockKeys.length > 0) await client.del(...lockKeys);
+    const sessionKeys = await client.keys('session:*');
+    if (sessionKeys.length > 0) await client.del(...sessionKeys);
+
     // 1. Log in as admin to get auth tokens for crediting wallets
     const adminLoginRes = await request(app.getHttpServer())
       .post('/api/auth/login')
@@ -49,13 +71,23 @@ describe('P2P & PIN Security (e2e)', () => {
     // 2. Register sender candidate
     const registerSenderRes = await request(app.getHttpServer())
       .post('/api/auth/register')
-      .send({ name: 'Sender Candidate', email: senderEmail, password });
+      .send({ 
+        name: 'Sender Candidate', 
+        email: senderEmail, 
+        password,
+        captchaToken: '1x00000000000000000000AA'
+      });
     senderId = registerSenderRes.body.user.id;
 
     // 3. Register recipient candidate
     const registerRecipientRes = await request(app.getHttpServer())
       .post('/api/auth/register')
-      .send({ name: 'Recipient Candidate', email: recipientEmail, password });
+      .send({ 
+        name: 'Recipient Candidate', 
+        email: recipientEmail, 
+        password,
+        captchaToken: '1x00000000000000000000AA'
+      });
     recipientId = registerRecipientRes.body.user.id;
 
     // 4. Authenticate sender

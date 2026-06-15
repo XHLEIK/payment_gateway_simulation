@@ -1,52 +1,57 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
-import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { PasswordSecurityService } from './password-security.service';
+import { CaptchaService } from './captcha.service';
+import { RateLimiterService } from './rate-limiter.service';
+import { AuditLoggerService } from './audit-logger.service';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
-    private readonly jwtService: JwtService,
+    private readonly passwordSecurityService: PasswordSecurityService,
+    private readonly captchaService: CaptchaService,
+    private readonly rateLimiterService: RateLimiterService,
+    private readonly auditLogger: AuditLoggerService,
+    private readonly redisService: RedisService,
   ) {}
 
-  // Registers a new user. Salts and hashes the password before persistence.
-  async register(dto: RegisterDto) {
+  /**
+   * Registers a new user with CAPTCHA check and password security validation.
+   */
+  async register(dto: RegisterDto, ip: string) {
+    this.auditLogger.logRegistrationAttempt(dto.email, ip, true);
+
+    // 1. Enforce IP-based rate limiting (Max 3 creations per hour)
+    await this.rateLimiterService.checkRegistrationLimit(ip);
+
+    // 2. Mandatory CAPTCHA validation
+    const isCaptchaValid = await this.captchaService.verifyToken(dto.captchaToken, ip);
+    if (!isCaptchaValid) {
+      this.auditLogger.logCaptchaFailure(dto.email, ip, 'register');
+      throw new BadRequestException('CAPTCHA verification failed. Please try again.');
+    }
+
+    // 3. Enforce strong password guidelines
+    this.passwordSecurityService.validatePassword(dto.password);
+
+    // Hash the password and save
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(dto.password, salt);
-    // Create the user profile and corresponding wallet atomically
+
     const user = await this.usersService.create(dto.name, dto.email, passwordHash, dto.role);
-    return this.generateToken(user);
-  }
 
-  // Authenticates a candidate with password check
-  async login(dto: LoginDto) {
-    const user = await this.usersService.findByEmail(dto.email);
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    // Verify bcrypt password comparison
-    const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!isMatch) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    return this.generateToken(user);
-  }
-
-  // Passport strategy lookup helper to authorize JWT tokens on requests
-  async validateUserById(id: string) {
-    return this.usersService.findById(id);
-  }
-
-  // Generates JWT token with user context payload
-  private generateToken(user: any) {
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    // Create session for the newly registered user
+    const sessionData = await this.createSession(user.id, ip, 'User Registration Agent');
     return {
-      access_token: this.jwtService.sign(payload),
+      session: sessionData,
       user: {
         id: user.id,
         name: user.name,
@@ -54,5 +59,124 @@ export class AuthService {
         role: user.role,
       },
     };
+  }
+
+  /**
+   * Authenticates a user, checking failed login counters, locks, rate limits, and CAPTCHAs.
+   */
+  async login(dto: LoginDto, ip: string, userAgent: string) {
+    this.auditLogger.logLoginAttempt(dto.email, ip, true);
+
+    // 1. Enforce general login rate limiting (5 attempts/min, 20 attempts/hr)
+    await this.rateLimiterService.checkLoginRateLimit(ip, dto.email);
+
+    // 2. Check for active temporary lockout (10 failed attempts -> 15 min lock)
+    const locked = await this.rateLimiterService.isLockedOut(ip, dto.email);
+    if (locked) {
+      this.auditLogger.logFailedLogin(dto.email, ip, 10, new Date(Date.now() + 15 * 60 * 1000));
+      throw new UnauthorizedException('Account temporarily locked due to excessive failed attempts. Please try again later.');
+    }
+
+    // 3. Check if CAPTCHA is required (after 5 failed attempts) and validate it
+    const captchaRequired = await this.rateLimiterService.isCaptchaRequired(ip, dto.email);
+    if (captchaRequired) {
+      if (!dto.captchaToken) {
+        throw new BadRequestException('CAPTCHA verification token is required');
+      }
+      const isCaptchaValid = await this.captchaService.verifyToken(dto.captchaToken, ip);
+      if (!isCaptchaValid) {
+        this.auditLogger.logCaptchaFailure(dto.email, ip, 'login');
+        throw new BadRequestException('CAPTCHA verification failed. Please try again.');
+      }
+    }
+
+    const user = await this.usersService.findByEmail(dto.email);
+    if (!user) {
+      await this.rateLimiterService.recordFailedAttempt(ip, dto.email);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const isMatch = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!isMatch) {
+      await this.rateLimiterService.recordFailedAttempt(ip, dto.email);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Successful Login: Reset attempts counters
+    await this.rateLimiterService.resetAttempts(ip, dto.email);
+
+    // Generate session
+    const sessionData = await this.createSession(user.id, ip, userAgent);
+
+    return {
+      session: sessionData,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    };
+  }
+
+  /**
+   * Destroys an active session.
+   */
+  async logout(sessionId: string, userId: string) {
+    if (sessionId) {
+      await this.redisService.del(`session:${sessionId}`);
+      this.auditLogger.logSessionDestroyed(userId, sessionId, 'User manual logout');
+    }
+  }
+
+  /**
+   * Generates a new secure session and CSRF token and saves it to Redis.
+   */
+  async createSession(userId: string, ip: string, userAgent: string) {
+    // Generate secure session ID
+    const sessionId = crypto.randomBytes(32).toString('hex');
+    
+    // Generate secure CSRF token
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+
+    const now = new Date();
+    const expiresAt = new Date(Date.now() + 86400 * 1000); // 24 hours TTL
+
+    const sessionPayload = {
+      session_id: sessionId,
+      user_id: userId,
+      csrf_token: csrfToken,
+      created_at: now.toISOString(),
+      last_activity: now.toISOString(),
+      ip_address: ip,
+      user_agent: userAgent,
+      expires_at: expiresAt.toISOString(),
+    };
+
+    // Save session in Redis with 24 hours TTL (86400 seconds)
+    await this.redisService.set(`session:${sessionId}`, JSON.stringify(sessionPayload), 86400);
+
+    this.auditLogger.logSessionCreated(userId, sessionId, ip);
+
+    return {
+      id: sessionId,
+      csrfToken: csrfToken,
+      expiresAt: expiresAt,
+    };
+  }
+
+  /**
+   * Rotates a session (creates a new session ID and CSRF token, destroying the old one).
+   */
+  async rotateSession(oldSessionId: string, userId: string, ip: string, userAgent: string) {
+    if (oldSessionId) {
+      await this.redisService.del(`session:${oldSessionId}`);
+      this.auditLogger.logSessionDestroyed(userId, oldSessionId, 'Session rotated');
+    }
+    return this.createSession(userId, ip, userAgent);
+  }
+
+  async validateUserById(id: string) {
+    return this.usersService.findById(id);
   }
 }

@@ -216,9 +216,11 @@ DB_NAME=payment_gateway_db
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 
-JWT_SECRET=your_jwt_secret_key
-JWT_EXPIRES_IN=24h
 WEBHOOK_SECRET=your_webhook_secret_key
+
+# Cloudflare Turnstile CAPTCHA Keys (Dummy keys are used by default in development)
+TURNSTILE_SECRET_KEY=1x00000000000000000000000000000000UNSHIELD
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA
 ```
 
 ### 1. Database Setup & Seeding
@@ -264,9 +266,12 @@ Demo credentials are programmatically configured inside the seed data configurat
 ## 📋 API Documentation Summary
 
 ### Authentication
-* `POST /api/auth/register` - Create a candidate account
-* `POST /api/auth/login` - Authenticate and retrieve JWT
-* `GET /api/auth/profile` - Retrieve candidate details (JWT protected)
+* `POST /api/auth/register` - Create a candidate account (verifies Turnstile token, returns user, CSRF token, and sets session cookie)
+* `POST /api/auth/login` - Authenticate, start session in Redis, and return CSRF token (sets session cookie)
+* `POST /api/auth/logout` - Clear session in Redis and expire session cookie (Session-protected)
+* `GET /api/auth/me` - Retrieve current session's user profile (Session-protected)
+* `GET /api/auth/csrf` - Retrieve a fresh CSRF token for the active session (Cookie-protected)
+* `GET /api/auth/captcha-required` - Check if Turnstile is required for a login attempt (IP/email check)
 
 ### Wallet
 * `GET /api/wallet/balance` - Retrieve current balance
@@ -290,9 +295,14 @@ Demo credentials are programmatically configured inside the seed data configurat
 ---
 
 ## 🛡️ Security Features & OWASP Hardening
-1. **Dynamic Environment Configuration**: Connection details are loaded dynamically from environment configurations via `dotenv` without any hardcoded credentials fallback (remediates OWASP Security Misconfiguration).
-2. **Timing-Safe HMAC Webhook Verification**: Gateway callbacks are protected with SHA-256 HMAC signatures computed from request payloads and the shared `WEBHOOK_SECRET`. String comparisons use `crypto.timingSafeEqual` over pre-hashed signatures to protect against side-channel timing attacks (remediates OWASP Cryptographic Failures).
-3. **Idempotency Key Guard**: Each transaction requires a unique `requestId` (UUID or unique key). Duplicate requests are intercepted, preventing double-debits.
-4. **Role-Based Access Control (RBAC)**: Route guards inspect JWT roles; admins are restricted from user wallet actions, and users cannot access refund approval or admin listings (remediates OWASP Broken Access Control).
-5. **HTTP Defense-in-Depth Headers (Helmet)**: Express `helmet` middleware is registered to apply standard security headers, mitigating MIME-sniffing (`X-Content-Type-Options: nosniff`), clickjacking (`X-Frame-Options: SAMEORIGIN`), and forcing SSL/TLS constraints.
-6. **Strict Production CORS Policy**: CORS configuration dynamically restricts access to the explicit `FRONTEND_URL` in production, rejecting wildcards or arbitrary origin reflections.
+1. **HTTP-Only Session Cookies & Redis Session Store**: Replaced client-side JWT local storage with secure HTTP-Only, SameSite=Strict cookies. Sessions are tracked inside Redis with sliding expiration windows and rotated/destroyed on login/logout/resets.
+2. **Cloudflare Turnstile Bot Protection**: Integrates CAPTCHA verification directly in registration and dynamically requires it after 3 failed login attempts (becoming mandatory after 5 failed attempts).
+3. **CSRF Prevention Middleware**: Enforces CSRF validation via `X-CSRF-Token` headers for all state-changing HTTP methods (POST, PUT, DELETE, PATCH).
+4. **Brute Force Lockouts & Spend Limits**: Restricts login rates and forces temporary lockouts of 15 minutes after 10 failed logins, and logs security alerts after 20 failed logins. Velocity limits control daily wallet transaction ceilings.
+5. **Timing-Safe HMAC Webhook Verification**: Gateway callbacks are protected with SHA-256 HMAC signatures computed from request payloads and the shared `WEBHOOK_SECRET`. String comparisons use `crypto.timingSafeEqual` over pre-hashed signatures to protect against side-channel timing attacks (remediates OWASP Cryptographic Failures).
+6. **Idempotency Key Guard**: Each transaction requires a unique `requestId` (UUID or unique key). Duplicate requests are intercepted, preventing double-debits.
+7. **Role-Based Access Control (RBAC)**: Route guards inspect session credentials; admins are restricted from user wallet actions, and users cannot access refund approval or admin listings (remediates OWASP Broken Access Control).
+8. **HTTP Defense-in-Depth Headers (Helmet)**: Express `helmet` middleware is registered to apply standard security headers, mitigating MIME-sniffing (`X-Content-Type-Options: nosniff`), clickjacking (`X-Frame-Options: SAMEORIGIN`), and forcing SSL/TLS constraints.
+9. **Strict Production CORS Policy**: CORS configuration dynamically restricts access to the explicit `FRONTEND_URL` in production, rejecting wildcards or arbitrary origin reflections.
+10. **ASVS Password Rules**: Implements strict password strength checking (minimum 12 chars, complexity, common pattern dictionary blocklists, and sequential character bans).
+

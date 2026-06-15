@@ -1,14 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../components/providers';
 import { Button, Input, Select, Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui';
 import { Loader2 } from 'lucide-react';
+import Script from 'next/script';
+import api from '../../services/api';
 
-// Login & Signup page component.
-// Handles user logins, registrations, state updates, and redirects authenticated users.
-// Also includes useful dev credentials pre-fills to speed up local testing.
 export default function LoginPage() {
   const { login, register, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
@@ -21,6 +20,11 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Security CAPTCHA states
+  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileWidgetId = useRef<string | null>(null);
+
   // If already logged in, redirect user straight to their dashboard
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
@@ -28,10 +32,88 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, isLoading, router]);
 
+  // Show captcha if in registration mode (mandatory) or if login brute-force limit reached
+  const showCaptcha = isRegisterMode || captchaRequired;
+
+  // Clear token whenever captcha requirement state changes
+  useEffect(() => {
+    setCaptchaToken('');
+    if (showCaptcha) {
+      renderTurnstileWidget();
+    }
+  }, [isRegisterMode, captchaRequired]);
+
+  // Render or re-render Turnstile widget dynamically
+  const renderTurnstileWidget = () => {
+    setTimeout(() => {
+      const container = document.getElementById('turnstile-container');
+      if (container && (window as any).turnstile) {
+        try {
+          // Clear container content to prevent multi-rendering
+          container.innerHTML = '';
+          const widgetEl = document.createElement('div');
+          container.appendChild(widgetEl);
+
+          const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA';
+          
+          (window as any).turnstile.render(widgetEl, {
+            sitekey: siteKey,
+            callback: (token: string) => {
+              setCaptchaToken(token);
+              setErrorMsg('');
+            },
+            'error-callback': () => {
+              setErrorMsg('CAPTCHA widget failed to render. Please refresh the page.');
+            },
+          });
+        } catch (e) {
+          console.error('Turnstile render error:', e);
+        }
+      }
+    }, 100);
+  };
+
+  // Check if email has failed logins and needs CAPTCHA
+  const handleEmailBlur = async () => {
+    if (isRegisterMode || !email) return;
+    try {
+      const res = await api.get(`/auth/captcha-required?email=${encodeURIComponent(email)}`);
+      setCaptchaRequired(res.data.captchaRequired);
+    } catch (err) {
+      console.error('Failed to fetch CAPTCHA requirements:', err);
+    }
+  };
+
+  // Client-side password validation helper
+  const validatePasswordClient = (pass: string): boolean => {
+    if (pass.length < 12) {
+      setErrorMsg('Password must be at least 12 characters long');
+      return false;
+    }
+    const hasUppercase = /[A-Z]/.test(pass);
+    const hasLowercase = /[a-z]/.test(pass);
+    const hasNumber = /[0-9]/.test(pass);
+    const hasSpecial = /[^A-Za-z0-9]/.test(pass);
+
+    if (!hasUppercase || !hasLowercase || !hasNumber || !hasSpecial) {
+      setErrorMsg('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.');
+      return false;
+    }
+
+    return true;
+  };
+
   // Handle Form Submission (Login vs Registration switcher)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    
+    // Check CAPTCHA if required
+    if (showCaptcha && !captchaToken) {
+      setErrorMsg('Please complete the CAPTCHA verification check.');
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -39,20 +121,35 @@ export default function LoginPage() {
         if (!name) {
           throw new Error('Name is required for registration');
         }
-        await register(name, email, password, role);
+        if (!validatePasswordClient(password)) {
+          setSubmitting(false);
+          return;
+        }
+        await register(name, email, password, captchaToken, role);
       } else {
-        await login(email, password);
+        await login(email, password, captchaToken);
       }
       router.push('/dashboard');
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.response?.data?.message || err.message || 'Authentication failed. Please check your credentials.');
+      setErrorMsg(
+        err.response?.data?.message || 
+        err.message || 
+        'Authentication failed. Please check your credentials.'
+      );
+
+      // Re-trigger CAPTCHA requirement check on error
+      if (!isRegisterMode) {
+        await handleEmailBlur();
+        // Reset widget token so user has to solve again on fail
+        renderTurnstileWidget();
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Utility to prefill inputs with default seed values (makes grading/testing fast)
+  // Utility to prefill inputs with default seed values
   const prefill = (type: 'user' | 'admin') => {
     if (type === 'admin') {
       setEmail('admin@regilly.com');
@@ -67,7 +164,6 @@ export default function LoginPage() {
     }
   };
 
-  // Loading blocker if verifying jwt token on initial render
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center min-h-screen bg-zinc-950">
@@ -79,6 +175,13 @@ export default function LoginPage() {
 
   return (
     <div className="flex-1 min-h-screen flex items-center justify-center bg-zinc-950 px-4 py-12 relative overflow-hidden">
+      {/* Turnstile CDN Loader */}
+      <Script 
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" 
+        strategy="afterInteractive" 
+        onLoad={renderTurnstileWidget}
+      />
+
       {/* Dynamic background visual gradients */}
       <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-indigo-600/5 blur-3xl" />
       <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 rounded-full bg-indigo-500/5 blur-3xl" />
@@ -111,7 +214,7 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent>
             {errorMsg && (
-              <div className="mb-4 rounded-lg bg-red-900/10 border border-red-500/20 p-3.5 text-xs font-medium text-red-400 text-center">
+              <div className="mb-4 rounded-lg bg-red-900/10 border border-red-500/20 p-3.5 text-xs font-medium text-red-400 text-center whitespace-pre-wrap">
                 {errorMsg}
               </div>
             )}
@@ -144,6 +247,7 @@ export default function LoginPage() {
                 placeholder="name@regilly.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onBlur={handleEmailBlur}
                 required
               />
 
@@ -155,6 +259,20 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
+
+              {isRegisterMode && (
+                <p className="text-[10px] text-zinc-500 leading-tight">
+                  Password must be at least 12 characters and contain uppercase, lowercase, numbers, and symbols. Common passwords and sequential keys are barred.
+                </p>
+              )}
+
+              {/* Dynamic Turnstile CAPTCHA Widget Placement */}
+              {showCaptcha && (
+                <div className="my-2 flex flex-col items-center">
+                  <span className="text-xs text-zinc-500 mb-1.5 font-medium">Security Verification Challenge</span>
+                  <div id="turnstile-container" className="min-h-[65px]" />
+                </div>
+              )}
 
               <Button type="submit" variant="primary" className="w-full mt-2 h-11 cursor-pointer" isLoading={submitting}>
                 {isRegisterMode ? 'Register Account' : 'Authenticate Session'}

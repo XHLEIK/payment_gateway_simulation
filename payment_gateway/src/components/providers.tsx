@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import api from '../services/api';
+import api, { setCsrfToken } from '../services/api';
 
 // 1. Initialize TanStack Query Client for local data-fetching caching state
 const queryClient = new QueryClient({
@@ -24,50 +24,49 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<any>;
-  register: (name: string, email: string, password: string, role?: string) => Promise<any>;
-  logout: () => void;
+  login: (email: string, password: string, captchaToken?: string) => Promise<any>;
+  register: (name: string, email: string, password: string, captchaToken: string, role?: string) => Promise<any>;
+  logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Authentication state provider wrapping local JWT lifecycle checks
+// Authentication state provider wrapping local Cookie Session lifecycle checks
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Attempt to recover existing user session on browser page mount
   useEffect(() => {
     async function restoreSession() {
-      const savedToken = localStorage.getItem('regilly_pg_token');
-      if (savedToken) {
-        setToken(savedToken);
-        try {
-          const res = await api.get('/auth/me');
+      try {
+        const res = await api.get('/auth/me');
+        if (res.data) {
           setUser(res.data);
-        } catch (err) {
-          console.error('Failed to restore session:', err);
-          logout(); // Clean invalid session items if token expired
+          setCsrfToken(res.data.csrfToken);
         }
+      } catch (err) {
+        console.error('Failed to restore session:', err);
+        // Clear any old csrf configuration
+        setCsrfToken(null);
+        setUser(null);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     }
     restoreSession();
   }, []);
 
-  // Post login credentials and save JWT token
-  const login = async (email: string, password: string) => {
+  // Post login credentials and save CSRF token in Axios memory
+  const login = async (email: string, password: string, captchaToken?: string) => {
     setIsLoading(true);
     try {
-      const res = await api.post('/auth/login', { email, password });
-      const { access_token, user: userData } = res.data;
-      localStorage.setItem('regilly_pg_token', access_token);
-      setToken(access_token);
+      const res = await api.post('/auth/login', { email, password, captchaToken });
+      const { user: userData, csrfToken } = res.data;
+      setCsrfToken(csrfToken);
       setUser(userData);
       queryClient.clear(); // Flush cache on new session login
       return res.data;
@@ -77,13 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Submit candidate registration
-  const register = async (name: string, email: string, password: string, role?: string) => {
+  const register = async (name: string, email: string, password: string, captchaToken: string, role?: string) => {
     setIsLoading(true);
     try {
-      const res = await api.post('/auth/register', { name, email, password, role });
-      const { access_token, user: userData } = res.data;
-      localStorage.setItem('regilly_pg_token', access_token);
-      setToken(access_token);
+      const res = await api.post('/auth/register', { name, email, password, captchaToken, role });
+      const { user: userData, csrfToken } = res.data;
+      setCsrfToken(csrfToken);
       setUser(userData);
       queryClient.clear(); // Flush cache on new session registration
       return res.data;
@@ -92,12 +90,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Clear local storage and reset auth state
-  const logout = () => {
-    localStorage.removeItem('regilly_pg_token');
-    setToken(null);
-    setUser(null);
-    queryClient.clear(); // Flush old query cache to avoid data leaks
+  // Post logout request, clear CSRF token, and reset auth state
+  const logout = async () => {
+    setIsLoading(true);
+    try {
+      await api.post('/auth/logout');
+    } catch (err) {
+      console.error('Error during backend logout endpoint call:', err);
+    } finally {
+      setCsrfToken(null);
+      setUser(null);
+      queryClient.clear(); // Flush old query cache to avoid data leaks
+      setIsLoading(false);
+    }
   };
 
   // Refresh current user information (useful after updating password or settings)
@@ -105,8 +110,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.get('/auth/me');
       setUser(res.data);
+      setCsrfToken(res.data.csrfToken);
     } catch (err) {
-      logout();
+      setCsrfToken(null);
+      setUser(null);
     }
   };
 
@@ -114,8 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        token,
-        isAuthenticated: !!token,
+        isAuthenticated: !!user,
         isLoading,
         login,
         register,

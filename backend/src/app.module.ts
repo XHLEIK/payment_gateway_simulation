@@ -6,6 +6,7 @@ import { APP_GUARD } from '@nestjs/core';
 import configuration from './config/configuration';
 import { RedisModule } from './modules/redis/redis.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { CsrfMiddleware } from './common/middleware/csrf.middleware';
 
 // Core Business Modules (keeping imports modular and isolated by domains)
 import { UsersModule } from './modules/users/users.module';
@@ -86,8 +87,7 @@ import { AppService } from './app.service';
   ],
 })
 export class AppModule implements NestModule {
-  // Bind the request tracking Correlation ID middleware globally across all routes
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+    consumer.apply(CorrelationIdMiddleware, CsrfMiddleware).forRoutes('*');
   }
 }
