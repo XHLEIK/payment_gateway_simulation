@@ -4,11 +4,14 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { CreateAdminDto } from './dto/create-admin.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { PasswordSecurityService } from './password-security.service';
 import { CaptchaService } from './captcha.service';
 import { RateLimiterService } from './rate-limiter.service';
 import { AuditLoggerService } from './audit-logger.service';
 import { RedisService } from '../redis/redis.service';
+import { UserRole } from '../users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
@@ -51,7 +54,7 @@ export class AuthService {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(dto.password, salt);
 
-    const user = await this.usersService.create(dto.name, dto.email, passwordHash, dto.role);
+    const user = await this.usersService.create(dto.name, dto.email, passwordHash, UserRole.USER);
 
     // Create session for the newly registered user
     const sessionData = await this.createSession(user.id, ip, 'User Registration Agent');
@@ -182,5 +185,114 @@ export class AuthService {
 
   async validateUserById(id: string) {
     return this.usersService.findById(id);
+  }
+
+  /**
+   * Registers a new administrator. Accessible only by authorized administrators.
+   */
+  async createAdmin(dto: CreateAdminDto, creatorId: string, ip: string) {
+    try {
+      // 1. Confirm password validation
+      if (dto.password !== dto.confirmPassword) {
+        throw new BadRequestException('Passwords do not match');
+      }
+
+      // 2. Enforce strong password guidelines
+      this.passwordSecurityService.validatePassword(dto.password);
+
+      // Hash the password
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(dto.password, salt);
+
+      // Create admin account
+      const user = await this.usersService.create(dto.name, dto.email, passwordHash, UserRole.ADMIN);
+
+      this.auditLogger.logAdminCreation(dto.email, creatorId, ip, true);
+
+      return {
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
+      };
+    } catch (err: any) {
+      this.auditLogger.logAdminCreation(dto.email, creatorId, ip, false, err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * Securely modifies the authenticated user's password.
+   * Invalidates other active user sessions upon completion.
+   */
+  async changePassword(userId: string, dto: ChangePasswordDto, ip: string, currentSessionId?: string) {
+    try {
+      // 1. Fetch user record
+      const user = await this.usersService.findById(userId);
+
+      // 2. Verify current password
+      const isMatch = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+      if (!isMatch) {
+        throw new BadRequestException('Incorrect current password');
+      }
+
+      // 3. Confirm new password matching
+      if (dto.newPassword !== dto.confirmNewPassword) {
+        throw new BadRequestException('New passwords do not match');
+      }
+
+      // 4. Verify password complexity/strength
+      this.passwordSecurityService.validatePassword(dto.newPassword);
+
+      // 5. Prevent reuse of current password
+      const isReuse = await bcrypt.compare(dto.newPassword, user.passwordHash);
+      if (isReuse) {
+        throw new BadRequestException('New password cannot be the same as your current password');
+      }
+
+      // 6. Hash new password
+      const salt = await bcrypt.genSalt(10);
+      user.passwordHash = await bcrypt.hash(dto.newPassword, salt);
+      await this.usersService['userRepository'].save(user);
+
+      // 7. Invalidate other sessions
+      await this.invalidateUserSessions(userId, currentSessionId);
+
+      this.auditLogger.logPasswordChange(userId, ip, true);
+      return { success: true };
+    } catch (err: any) {
+      this.auditLogger.logPasswordChange(userId, ip, false, err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * Helper to invalidate all other active sessions of the user from Redis.
+   */
+  async invalidateUserSessions(userId: string, currentSessionId?: string) {
+    const client = this.redisService.getClient();
+    const keys = await client.keys('session:*');
+    if (keys.length === 0) return;
+
+    for (const key of keys) {
+      const sessionId = key.split(':')[1];
+      if (sessionId === currentSessionId) {
+        continue;
+      }
+      const val = await client.get(key);
+      if (val) {
+        try {
+          const session = JSON.parse(val);
+          if (session.user_id === userId) {
+            await client.del(key);
+            this.auditLogger.logSessionDestroyed(userId, sessionId, 'Force session eviction (password changed)');
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
   }
 }

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../components/providers';
 import { Button, Input, Select, Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui';
-import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Eye, EyeOff, RotateCcw } from 'lucide-react';
 import api from '../../services/api';
 
 export default function LoginPage() {
@@ -15,7 +15,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState('user');
   const [errorMsg, setErrorMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,6 +29,7 @@ export default function LoginPage() {
   const [captchaId, setCaptchaId] = useState('');
   const [captchaValue, setCaptchaValue] = useState('');
   const [captchaSvg, setCaptchaSvg] = useState('');
+  const [captchaLoading, setCaptchaLoading] = useState(false);
 
   // If already logged in, redirect user straight to their dashboard
   useEffect(() => {
@@ -43,6 +43,7 @@ export default function LoginPage() {
 
   // Fetch SVG CAPTCHA from backend
   const fetchCaptcha = async () => {
+    setCaptchaLoading(true);
     try {
       setCaptchaValue('');
       const res = await api.get('/auth/captcha');
@@ -51,6 +52,8 @@ export default function LoginPage() {
     } catch (err) {
       console.error('Failed to fetch CAPTCHA challenge:', err);
       setErrorMsg('Failed to load security CAPTCHA. Please try again.');
+    } finally {
+      setCaptchaLoading(false);
     }
   };
 
@@ -121,15 +124,17 @@ export default function LoginPage() {
           setSubmitting(false);
           return;
         }
-        await register(name, email, password, confirmPassword, captchaId, captchaValue, role);
+        await register(name, email, password, confirmPassword, captchaId, captchaValue);
       } else {
         await login(email, password, captchaId, captchaValue);
       }
       router.push('/dashboard');
     } catch (err: any) {
       console.error(err);
+      const rawMsg = err.response?.data?.message;
+      const formattedMsg = Array.isArray(rawMsg) ? rawMsg.join('\n') : rawMsg;
       setErrorMsg(
-        err.response?.data?.message || 
+        formattedMsg || 
         err.message || 
         'Authentication failed. Please check your credentials.'
       );
@@ -155,13 +160,11 @@ export default function LoginPage() {
       setPassword('Subham@1234');
       setConfirmPassword('Subham@1234');
       setName('System Administrator');
-      setRole('admin');
     } else {
       setEmail('user@regilly.com');
       setPassword('Subham@1234');
       setConfirmPassword('Subham@1234');
       setName('Subham Bose');
-      setRole('user');
     }
   };
 
@@ -209,7 +212,7 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent>
             {errorMsg && (
-              <div className="mb-4 rounded-lg bg-red-900/10 border border-red-500/20 p-3.5 text-xs font-medium text-red-400 text-center whitespace-pre-wrap">
+              <div role="alert" className="mb-4 rounded-lg bg-red-900/10 border border-red-500/20 p-3.5 text-xs font-medium text-red-400 text-center whitespace-pre-wrap">
                 {errorMsg}
               </div>
             )}
@@ -223,15 +226,6 @@ export default function LoginPage() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
-                  />
-                  <Select
-                    label="Register As (Role)"
-                    options={[
-                      { value: 'user', label: 'Standard Portal User' },
-                      { value: 'admin', label: 'System Administrator (Admin)' },
-                    ]}
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
                   />
                 </>
               )}
@@ -292,41 +286,55 @@ export default function LoginPage() {
 
               {/* Security CAPTCHA Challenge Component */}
               {showCaptcha && (
-                <div className="my-2 p-4 rounded-xl border border-zinc-900 bg-zinc-950/50 flex flex-col gap-3">
-                  <span className="text-xs text-zinc-400 font-semibold uppercase tracking-wider">Security Verification Challenge</span>
-                  <div className="flex gap-3 items-center">
+                <div className="my-2 p-4 rounded-xl border border-white/[0.08] bg-zinc-900/40 backdrop-blur-md flex flex-col gap-3 transition-all duration-300 hover:border-white/[0.12]">
+                  <div className="flex flex-col gap-1">
+                    <span id="captcha-label" className="text-xs text-zinc-400 font-semibold uppercase tracking-wider text-center">
+                      Security Verification Challenge
+                    </span>
+                    <span id="captcha-desc" className="text-[10px] text-zinc-500 text-center">
+                      Please enter the characters shown in the image below to verify you are a human.
+                    </span>
+                  </div>
+                  
+                  <div className="flex gap-3 items-center justify-center">
                     {captchaSvg ? (
                       <div 
                         dangerouslySetInnerHTML={{ __html: captchaSvg }} 
-                        className="rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900/40 flex items-center justify-center select-none shadow-inner h-[50px] w-[150px]"
+                        aria-label="Visual security verification code image"
+                        role="img"
+                        className="rounded-lg overflow-hidden border border-white/[0.08] bg-[#111827] flex items-center justify-center select-none shadow-inner h-[50px] w-[150px] transition-all duration-300 hover:border-indigo-500/30"
                       />
                     ) : (
-                      <div className="h-[50px] w-[150px] rounded-lg border border-zinc-800 bg-zinc-900/40 animate-pulse flex items-center justify-center text-xs text-zinc-600">
-                        Loading...
+                      <div 
+                        aria-label="Loading security captcha"
+                        role="status"
+                        className="h-[50px] w-[150px] rounded-lg border border-zinc-800 bg-zinc-900/40 animate-pulse flex items-center justify-center text-xs text-zinc-600"
+                      >
+                        <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
                       </div>
                     )}
-                    <Button 
+                    <button 
                       type="button" 
-                      variant="secondary" 
-                      onClick={fetchCaptcha} 
-                      className="h-[50px] w-[50px] flex items-center justify-center p-0 cursor-pointer border border-zinc-800 bg-zinc-900/20 hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 transition-all rounded-lg"
+                      onClick={fetchCaptcha}
+                      disabled={captchaLoading}
+                      aria-label="Generate New CAPTCHA"
+                      title="Generate New CAPTCHA"
+                      className="h-[50px] w-[50px] flex items-center justify-center p-0 cursor-pointer border border-white/[0.08] bg-zinc-900/50 hover:bg-zinc-800/80 hover:border-indigo-500/40 text-zinc-400 hover:text-zinc-200 transition-all rounded-full outline-none focus:ring-2 focus:ring-indigo-500/50 group"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                        <path d="M3 3v5h5" />
-                        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                        <path d="M16 16h5v5" />
-                      </svg>
-                    </Button>
+                      <RotateCcw className={`h-5 w-5 ${captchaLoading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
+                    </button>
                   </div>
                   <Input
-                    placeholder="Enter captcha text"
+                    placeholder="Enter verification text"
                     value={captchaValue}
+                    aria-required="true"
+                    aria-describedby="captcha-desc"
+                    aria-labelledby="captcha-label"
                     onChange={(e) => {
                       setCaptchaValue(e.target.value);
                       setErrorMsg('');
                     }}
-                    className="text-center font-mono tracking-widest text-base bg-zinc-900/60 uppercase"
+                    className="text-center font-mono tracking-widest text-base bg-zinc-900/60 uppercase border-white/[0.08] focus:border-indigo-500/50"
                     maxLength={5}
                     required
                   />

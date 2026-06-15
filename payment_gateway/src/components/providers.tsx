@@ -78,10 +78,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Submit candidate registration
-  const register = async (name: string, email: string, password: string, confirmPassword: string, captchaId: string, captchaValue: string, role?: string) => {
+  const register = async (name: string, email: string, password: string, confirmPassword: string, captchaId: string, captchaValue: string) => {
     setIsLoading(true);
     try {
-      const res = await api.post('/auth/register', { name, email, password, confirmPassword, captchaId, captchaValue, role });
+      const res = await api.post('/auth/register', { name, email, password, confirmPassword, captchaId, captchaValue });
       const { user: userData, csrfToken } = res.data;
       setCsrfToken(csrfToken);
       setUser(userData);

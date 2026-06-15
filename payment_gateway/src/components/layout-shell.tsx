@@ -13,7 +13,9 @@ import {
   Loader2,
   Menu,
   X,
-  Bell
+  Bell,
+  KeyRound,
+  UserPlus
 } from 'lucide-react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -136,6 +138,8 @@ export default function LayoutShell({ children }: LayoutShellProps) {
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, role: 'all' },
     { name: 'Wallet', path: '/wallet', icon: Wallet, role: 'all' },
     { name: 'Transactions', path: '/transactions', icon: History, role: 'all' },
+    { name: 'Change Password', path: '/change-password', icon: KeyRound, role: 'all' },
+    { name: 'Create Admin', path: '/admin/create-admin', icon: UserPlus, role: 'admin' },
     { name: 'Analytics', path: '/analytics', icon: BarChart3, role: 'admin' },
     { name: 'Admin Control', path: '/admin', icon: ShieldAlert, role: 'admin' },
   ];

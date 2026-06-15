@@ -7,6 +7,11 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RateLimiterService } from './rate-limiter.service';
 import { Throttle } from '@nestjs/throttler';
 import { CaptchaService } from './captcha.service';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
+import { CreateAdminDto } from './dto/create-admin.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -152,7 +157,36 @@ export class AuthController {
   }
 
   @Get('captcha')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   async getCaptcha() {
     return this.captchaService.generateCaptcha();
+  }
+
+  @Post('create-admin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async createAdmin(
+    @Body() dto: CreateAdminDto,
+    @Req() req: any,
+  ) {
+    const ip = this.getClientIp(req);
+    return this.authService.createAdmin(dto, req.user.id, ip);
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  async changePassword(
+    @Body() dto: ChangePasswordDto,
+    @Req() req: any,
+  ) {
+    const ip = this.getClientIp(req);
+    let currentSessionId = req.cookies ? req.cookies['regilly_session'] : null;
+    if (!currentSessionId && req.headers.authorization) {
+      const parts = req.headers.authorization.split(' ');
+      if (parts[0] === 'Bearer' && parts[1]) {
+        currentSessionId = parts[1];
+      }
+    }
+    return this.authService.changePassword(req.user.id, dto, ip, currentSessionId);
   }
 }

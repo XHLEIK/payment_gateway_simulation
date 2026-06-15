@@ -77,6 +77,29 @@ export class AuditLoggerService {
   }
 
   /**
+   * Logs an administrator account creation event.
+   */
+  logAdminCreation(adminEmail: string, creatorId: string, ip: string, success: boolean, reason?: string) {
+    const maskedEmail = this.maskEmail(adminEmail);
+    this.logger.log(
+      `[ADMIN_CREATION] CreatorID: ${creatorId} | AdminEmail: ${maskedEmail} | IP: ${ip} | Success: ${success}${
+        reason ? ` | Reason: ${reason}` : ''
+      }`
+    );
+  }
+
+  /**
+   * Logs a password change event.
+   */
+  logPasswordChange(userId: string, ip: string, success: boolean, reason?: string) {
+    this.logger.log(
+      `[PASSWORD_CHANGE] UserID: ${userId} | IP: ${ip} | Success: ${success}${
+        reason ? ` | Reason: ${reason}` : ''
+      }`
+    );
+  }
+
+  /**
    * Helper to mask email address to prevent PII leakage in logs.
    */
   private maskEmail(email: string): string {

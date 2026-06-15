@@ -1,14 +1,13 @@
 import { IsEmail, IsString, MinLength } from 'class-validator';
 
-// Data Transfer Object for candidate/user registration.
-export class RegisterDto {
+// Data Transfer Object for secure admin creation.
+export class CreateAdminDto {
   @IsString()
   name: string;
 
   @IsEmail()
   email: string;
 
-  // Enforces a minimum password length to reduce vulnerable credentials
   @IsString()
   @MinLength(12, { message: 'Password must be at least 12 characters long' })
   password: string;
@@ -16,12 +15,4 @@ export class RegisterDto {
   @IsString()
   @MinLength(12, { message: 'Password confirmation must be at least 12 characters long' })
   confirmPassword: string;
-
-
-
-  @IsString()
-  captchaId: string;
-
-  @IsString()
-  captchaValue: string;
 }

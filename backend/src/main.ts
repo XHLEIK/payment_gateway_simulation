@@ -3,7 +3,7 @@ import { AppModule } from './app.module';
 import { WinstonModule } from 'nest-winston';
 import { winstonLoggerOptions } from './common/logger';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -68,6 +68,11 @@ async function bootstrap() {
       whitelist: true, // Strips away properties that are not explicitly defined in the DTO schema
       transform: true, // Autoconverts incoming string query/body params to their matched class types
       forbidNonWhitelisted: true, // Throw an error if a client sends extra fields not declared in DTO
+      exceptionFactory: (errors) => {
+        const logger = new Logger('ValidationPipe');
+        logger.error(`Validation failed: ${JSON.stringify(errors)}`);
+        return new BadRequestException(errors);
+      },
     }),
   );
 
