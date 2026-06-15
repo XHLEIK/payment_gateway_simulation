@@ -7,10 +7,14 @@ This is the Next.js frontend client portal for the **Payment Gateway & Wallet Ma
 ## 🚀 Key Features
 
 - **Rich Glassmorphic Design**: A premium dark-mode theme utilizing custom Vanilla CSS components, glowing gradients, hover scaling, and clean layouts.
+- **In-App Notification Center**: A header-bound notification bell with an active unread badge and a sliding glassmorphic drawer containing deep links, unread states, and mark-all-read triggers.
+- **Transaction Rollback & Disputes**: Interactive rollback (compensating transaction request) trigger and dispute submission modal for all debit transactions.
+- **Payment Simulation Toggles**: Interactive sliding toggles in the wallet transfer view to simulate a processing or failed payment state.
+- **Admin Command Center**: Complete dashboard for administrators to approve/reject reversals, transition dispute workflows, manage pending simulation queues, and adjust candidate velocity spend limits.
+- **Velocity Spend limits Gauges**: Circular or linear progress indicators displaying spend allowances used today against maximum candidate limits.
 - **Dynamic Dashboard Metrics**: Displays current balance, transaction rates, and success rates. Includes interactive charts powered by **Recharts** to plot transaction volume trends.
 - **Interactive Wallet Controls**: Form fields to load money, verify credit cards, and execute peer-to-peer money transfers using transaction PIN locks.
 - **Sortable & Paginated Log Table**: Lists historical transactions with dynamic columns header sorting (`Date`, `Reference ID`, `Type`, `Amount`, `Status`).
-- **Administrative Portal**: Admin panel displaying global metrics, ledger audit logs, and approval buttons to trigger refunds for candidate debits.
 
 ---
 

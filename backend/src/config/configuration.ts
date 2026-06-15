@@ -9,7 +9,7 @@ export default () => ({
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
     username: process.env.DB_USERNAME || 'postgres',
-    password: process.env.DB_PASSWORD || 'Subham@1234',
+    password: process.env.DB_PASSWORD || '',
     name: process.env.DB_NAME || 'payment_gateway_db',
     // Minimum/maximum DB connections in connection pool
     poolMin: parseInt(process.env.DB_POOL_MIN || '2', 10),
@@ -24,12 +24,12 @@ export default () => ({
   
   jwt: {
     // JWT secret to sign and verify web tokens
-    secret: process.env.JWT_SECRET || 'regilly_super_secret_fintech_key_2026',
+    secret: process.env.JWT_SECRET || 'DEVELOPMENT_JWT_SECRET_REPLACE_IN_PRODUCTION',
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   },
   
   webhook: {
     // Secret key used to compute HMAC SHA-256 signatures for outgoing webhooks
-    secret: process.env.WEBHOOK_SECRET || 'regilly_webhook_secret_hmac_key_2026',
+    secret: process.env.WEBHOOK_SECRET || 'DEVELOPMENT_WEBHOOK_SECRET_REPLACE_IN_PRODUCTION',
   },
 });

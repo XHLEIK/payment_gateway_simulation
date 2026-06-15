@@ -5,6 +5,7 @@ import { winstonLoggerOptions } from './common/logger';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
 
 async function bootstrap() {
   // 1. Initialize the Nest application using Winston as our custom log manager
@@ -18,9 +19,15 @@ async function bootstrap() {
   // 2. Set a global prefix so all endpoints begin with '/api' (e.g. /api/auth/login)
   app.setGlobalPrefix('api');
 
+  // Register Helmet middleware for securing HTTP response headers
+  app.use(helmet());
+
   // 3. Enable CORS for cross-origin communications between the Next.js frontend and NestJS backend
+  const isProduction = configService.get<string>('env') === 'production';
+  const frontendUrl = configService.get<string>('FRONTEND_URL') || process.env.FRONTEND_URL || 'http://localhost:3000';
+
   app.enableCors({
-    origin: true, // Allow all origins for dev/testing ease. In production, restrict this.
+    origin: isProduction ? frontendUrl : true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });

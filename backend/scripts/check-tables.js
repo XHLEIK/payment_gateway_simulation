@@ -1,15 +1,17 @@
 // Diagnostic script to check all public tables and print column metadata
 // for both 'users' and 'payment_requests' to make sure the database is aligned
 // with our NestJS entities.
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const { Client } = require('pg');
 
 async function checkTables() {
   const client = new Client({
-    host: 'localhost',
-    port: 5432,
-    user: 'postgres',
-    password: 'Subham@1234',
-    database: 'payment_gateway_db',
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    user: process.env.DB_USERNAME || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'payment_gateway_db',
   });
 
   try {

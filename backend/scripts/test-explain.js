@@ -1,15 +1,17 @@
 // Optimization analysis script.
 // Runs EXPLAIN ANALYZE on our most frequent query (fetching user transaction history).
 // Helps us verify if PostgreSQL is using the index scan rather than a slow sequential table scan.
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const { Client } = require('pg');
 
 async function runExplain() {
   const client = new Client({
-    host: 'localhost',
-    port: 5432,
-    user: 'postgres',
-    password: 'Subham@1234',
-    database: 'payment_gateway_db',
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    user: process.env.DB_USERNAME || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'payment_gateway_db',
   });
 
   try {

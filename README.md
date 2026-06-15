@@ -6,7 +6,6 @@ A production-grade, highly secure, and concurrency-safe fintech payment gateway 
 ---
 
 ### 📖 Quick Links
-- **Interview Preparation Manual**: [explanation.md](file:///c:/Users/ASUS/Desktop/payment_gateway/explanation.md)
 - **NestJS Backend Details**: [backend/README.md](file:///c:/Users/ASUS/Desktop/payment_gateway/backend/README.md)
 - **Next.js Frontend Details**: [payment_gateway/README.md](file:///c:/Users/ASUS/Desktop/payment_gateway/payment_gateway/README.md)
 
@@ -50,6 +49,31 @@ Candidate (User)
        ▼ (Record Transition State in SUCCESS/FAILED)
    Audit Log
 ```
+---
+
+## 🌟 Advanced Production-Grade Features
+
+In addition to standard wallet credits and debits, the portal implements five production-grade enterprise functionalities:
+
+### 1. In-App Real-Time Notification System (Bell & Sliding Drawer)
+- **Redis-Backed Unread Tracking**: Employs atomic `INCR`/`DECR` operations on Redis keys (`unread:{userId}`) to query unread badge counts in $O(1)$ time, bypassing database load.
+- **Glassmorphic Drawer Layout**: A sliding notifications overlay panel on the Next.js header detailing recent transaction updates, disputes, and request rollbacks with automatic read marking.
+
+### 2. Peer-to-Peer (P2P) Transfer Reversals
+- **Compensating Transactions**: Candidates can click a "Rollback" trigger on successful transfers. Approved requests dynamically execute a compensating debit/credit transaction to restore original balances safely.
+- **Circular Locking Deadlock Protection**: When transferring balances, user UUIDs are sorted alphabetically before executing Row-Level Locking (`SELECT FOR UPDATE`), eliminating circular dependency deadlocks.
+
+### 3. Interactive Payment Simulations & Admin Verification Queues
+- **Simulation Toggles**: Integrated within the transfer checkout step are toggles to simulate a "FAILED" or "PROCESSING" state.
+- **Admin Decision Pipeline**: Transactions set to "PROCESSING" bypass automatic gateway resolution and are instead placed into a dedicated Admin Queue for approval or rejection.
+
+### 4. Finite State Machine (FSM) Dispute Resolution
+- **FSM State Validation**: Built-in state validation enforcing strict transitions (`OPEN -> UNDER_REVIEW -> RESOLVED/REJECTED`) with constant-time lookup.
+- **Conflict Prevention**: Uses a composite database index `idx_dispute_txn_user` to restrict users to a single dispute claim per transaction.
+
+### 5. Velocity Spend Checks & Daily Limits
+- **Redis Sliding Window Rate Limiting**: Outgoing transactions are checked against a configured daily spend limit using a Redis-backed sliding window for instant $O(1)$ spend validation.
+- **Database Graceful Fallback**: In the event of a Redis outage, the system automatically falls back to aggregation queries on PostgreSQL to calculate total daily spend.
 
 ---
 
@@ -265,7 +289,10 @@ Demo credentials are programmatically configured inside the seed data configurat
 
 ---
 
-## 🛡️ Security Features
-1. **HMAC Webhook Verification**: Gateway callbacks are protected with SHA-256 HMAC signatures computed from request payloads and the shared `WEBHOOK_SECRET`.
-2. **Idempotency Key Guard**: Each transaction requires a unique `requestId` (UUID or unique key). Duplicate requests are intercepted, preventing double-debits.
-3. **Role-Based Access Control (RBAC)**: Route guards inspect JWT roles; admins are restricted from user wallet actions, and users cannot access refund approval or admin listings.
+## 🛡️ Security Features & OWASP Hardening
+1. **Dynamic Environment Configuration**: Connection details are loaded dynamically from environment configurations via `dotenv` without any hardcoded credentials fallback (remediates OWASP Security Misconfiguration).
+2. **Timing-Safe HMAC Webhook Verification**: Gateway callbacks are protected with SHA-256 HMAC signatures computed from request payloads and the shared `WEBHOOK_SECRET`. String comparisons use `crypto.timingSafeEqual` over pre-hashed signatures to protect against side-channel timing attacks (remediates OWASP Cryptographic Failures).
+3. **Idempotency Key Guard**: Each transaction requires a unique `requestId` (UUID or unique key). Duplicate requests are intercepted, preventing double-debits.
+4. **Role-Based Access Control (RBAC)**: Route guards inspect JWT roles; admins are restricted from user wallet actions, and users cannot access refund approval or admin listings (remediates OWASP Broken Access Control).
+5. **HTTP Defense-in-Depth Headers (Helmet)**: Express `helmet` middleware is registered to apply standard security headers, mitigating MIME-sniffing (`X-Content-Type-Options: nosniff`), clickjacking (`X-Frame-Options: SAMEORIGIN`), and forcing SSL/TLS constraints.
+6. **Strict Production CORS Policy**: CORS configuration dynamically restricts access to the explicit `FRONTEND_URL` in production, rejecting wildcards or arbitrary origin reflections.

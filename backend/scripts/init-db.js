@@ -1,16 +1,18 @@
 // Bootstrapping script to check if our target database 'payment_gateway_db'
 // exists, and if not, creates it. This should be run before running TypeORM migrations
 // or schema initialization.
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const { Client } = require('pg');
 
 async function initDb() {
   // Connect to default system 'postgres' DB because we can't connect to
   // a database that doesn't exist yet to create it.
   const client = new Client({
-    host: 'localhost',
-    port: 5432,
-    user: 'postgres',
-    password: 'Subham@1234',
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    user: process.env.DB_USERNAME || 'postgres',
+    password: process.env.DB_PASSWORD || '',
     database: 'postgres', 
   });
 

@@ -2,15 +2,17 @@
 // Simulates 5 workers running transaction debit operations concurrently to verify
 // that our SELECT FOR UPDATE + SERIALIZABLE database locks work as expected,
 // preventing race conditions, double debits, and balance overdrafts.
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const { Pool } = require('pg');
 
 // Use a connection pool to allow concurrent queries in parallel
 const pool = new Pool({
-  host: 'localhost',
-  port: 5432,
-  user: 'postgres',
-  password: 'Subham@1234',
-  database: 'payment_gateway_db',
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '5432', 10),
+  user: process.env.DB_USERNAME || 'postgres',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'payment_gateway_db',
   max: 10,
 });
 

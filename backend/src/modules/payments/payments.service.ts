@@ -12,7 +12,7 @@ import { TransactionStatus, TransactionType } from '../transactions/entities/tra
 import { PaymentRequest, PaymentRequestStatus } from './entities/payment-request.entity';
 import { UsersService } from '../users/users.service';
 import { WalletsService } from '../wallets/wallets.service';
-import { randomBytes, createHmac } from 'crypto';
+import { randomBytes, createHmac, timingSafeEqual } from 'crypto';
 import axios from 'axios';
 
 @Injectable()
@@ -51,11 +51,27 @@ export class PaymentsService {
   // 2. Verify Payment (Mock Signature Check verifying checkout parameters)
   async verifyPayment(orderId: string, signature: string, amount: number): Promise<boolean> {
     const expectedSignature = this.generateMockSignature(orderId, amount);
-    if (signature !== expectedSignature) {
+    if (!this.safeStringCompare(signature, expectedSignature)) {
       this.logger.warn(`Signature mismatch for Order ${orderId}. Expected ${expectedSignature}, got ${signature}`);
       return false;
     }
     return true;
+  }
+
+  // Timing-safe string comparison helper to prevent side-channel timing attacks
+  private safeStringCompare(a: string, b: string): boolean {
+    if (typeof a !== 'string' || typeof b !== 'string') {
+      return false;
+    }
+    const aBuf = Buffer.from(a, 'utf8');
+    const bBuf = Buffer.from(b, 'utf8');
+
+    // To prevent length leaks and crash in timingSafeEqual (which requires buffers of identical length),
+    // we hash both buffers with SHA-256 first, resulting in identical 32-byte buffers to safely compare.
+    const hashA = createHmac('sha256', this.webhookSecret).update(aBuf).digest();
+    const hashB = createHmac('sha256', this.webhookSecret).update(bBuf).digest();
+
+    return timingSafeEqual(hashA, hashB);
   }
 
   // Helper: Create secure signature for checkout validation using HMAC SHA256
@@ -119,7 +135,7 @@ export class PaymentsService {
     const expectedSignature = createHmac('sha256', this.webhookSecret)
       .update(payloadStr)
       .digest('hex');
-    return signature === expectedSignature;
+    return this.safeStringCompare(signature, expectedSignature);
   }
 
   // === PAYMENT REQUESTS (REQUEST MONEY) METHODS ===
