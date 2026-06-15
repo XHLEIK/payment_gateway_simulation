@@ -30,7 +30,7 @@ export class PaymentsService {
     private readonly walletsService: WalletsService,
   ) {
     // Read the secret key used for HMAC signature generation from environment config
-    this.webhookSecret = this.configService.get<string>('webhook.secret', 'appsc_webhook_secret_hmac_key_2026');
+    this.webhookSecret = this.configService.get<string>('webhook.secret', 'regilly_webhook_secret_hmac_key_2026');
     this.port = this.configService.get<number>('port', 3001);
   }
 

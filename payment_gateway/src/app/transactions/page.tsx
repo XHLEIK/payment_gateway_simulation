@@ -182,8 +182,8 @@ export default function TransactionsPage() {
       const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
       const downloadLink = document.createElement('a');
       downloadLink.href = blobUrl;
-      // APPSC formatted export filename
-      downloadLink.setAttribute('download', `appsc-transactions-report-${Date.now()}.csv`);
+      // Regilly formatted export filename
+      downloadLink.setAttribute('download', `regilly-transactions-report-${Date.now()}.csv`);
       document.body.appendChild(downloadLink);
       downloadLink.click();
       downloadLink.remove();

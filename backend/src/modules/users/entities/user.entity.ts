@@ -11,7 +11,7 @@ import { Wallet } from '../../wallets/entities/wallet.entity';
 import { Transaction } from '../../transactions/entities/transaction.entity';
 import { Refund } from '../../refunds/entities/refund.entity';
 
-// Access roles within the APPSC platform
+// Access roles within the Regilly platform
 export enum UserRole {
   ADMIN = 'admin',
   USER = 'user',

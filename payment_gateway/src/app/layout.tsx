@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 
 // Metadata configuration for the page header (improves tab titles and SEO summaries)
 export const metadata: Metadata = {
-  title: 'Arunachal Pradesh (APPSC) Payment Gateway & Wallet Dashboard',
-  description: 'Official Payment Gateway and Wallet Administration Dashboard for Arunachal Pradesh (APPSC) portals.',
+  title: 'Regilly Payment Gateway & Wallet Dashboard',
+  description: 'Official Payment Gateway and Wallet Administration Dashboard for Regilly portals.',
 };
 
 // Root layout that wraps all Next.js subpages.

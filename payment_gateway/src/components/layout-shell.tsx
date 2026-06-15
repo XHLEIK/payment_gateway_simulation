@@ -161,17 +161,17 @@ export default function LayoutShell({ children }: LayoutShellProps) {
             {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
           
-          {/* Header branding referencing Arunachal Pradesh (APPSC) */}
+          {/* Header branding for Regilly Payment Portal */}
           <div className="flex items-center gap-2">
             <span className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-sm text-white tracking-widest shadow-md">
-              AP
+              RG
             </span>
             <div className="flex flex-col">
               <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest leading-none">
-                APPSC Gateway
+                Regilly Gateway
               </span>
               <span className="text-sm font-extrabold text-zinc-200 tracking-tight">
-                Arunachal Pradesh Portal
+                Payment Portal
               </span>
             </div>
           </div>

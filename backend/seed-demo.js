@@ -7,16 +7,16 @@ const bcryptHash = '$2b$10$RA.jVR8hPL4kL/JXN9FvuO8MC/IG3SIVh7tbnoWJ2n4iUuiXqD7v2
 
 // Array of 10 mock users to seed into the database with initial balances
 const users = [
-  { id: 'f5e4d3c2-b1a0-9f8e-7d6c-5b4a3f2e1d0c', name: 'Subham Bose', email: 'user@appsc.gov.in', role: 'user', balance: 2500.00 },
-  { id: crypto.randomUUID(), name: 'Ayang Pertin', email: 'ayang.pertin@appsc.gov.in', role: 'user', balance: 1500.00 },
-  { id: crypto.randomUUID(), name: 'Tashi Namgyal', email: 'tashi.namgyal@appsc.gov.in', role: 'user', balance: 4500.00 },
-  { id: crypto.randomUUID(), name: 'Yomgo Bagra', email: 'yomgo.bagra@appsc.gov.in', role: 'user', balance: 800.00 },
-  { id: crypto.randomUUID(), name: 'Dugi Tami', email: 'dugi.tami@appsc.gov.in', role: 'user', balance: 12000.00 },
-  { id: crypto.randomUUID(), name: 'Lobsang Wangdu', email: 'lobsang.wangdu@appsc.gov.in', role: 'user', balance: 350.00 },
-  { id: crypto.randomUUID(), name: 'Kime Sunku', email: 'kime.sunku@appsc.gov.in', role: 'user', balance: 6700.00 },
-  { id: crypto.randomUUID(), name: 'Dani Hancock', email: 'dani.hancock@appsc.gov.in', role: 'user', balance: 150.00 },
-  { id: crypto.randomUUID(), name: 'Padi Laji', email: 'padi.laji@appsc.gov.in', role: 'user', balance: 8900.00 },
-  { id: crypto.randomUUID(), name: 'Likha Sira', email: 'likha.sira@appsc.gov.in', role: 'user', balance: 0.00 },
+  { id: 'f5e4d3c2-b1a0-9f8e-7d6c-5b4a3f2e1d0c', name: 'Subham Bose', email: 'user@regilly.com', role: 'user', balance: 2500.00 },
+  { id: crypto.randomUUID(), name: 'Ayang Pertin', email: 'ayang.pertin@regilly.com', role: 'user', balance: 1500.00 },
+  { id: crypto.randomUUID(), name: 'Tashi Namgyal', email: 'tashi.namgyal@regilly.com', role: 'user', balance: 4500.00 },
+  { id: crypto.randomUUID(), name: 'Yomgo Bagra', email: 'yomgo.bagra@regilly.com', role: 'user', balance: 800.00 },
+  { id: crypto.randomUUID(), name: 'Dugi Tami', email: 'dugi.tami@regilly.com', role: 'user', balance: 12000.00 },
+  { id: crypto.randomUUID(), name: 'Lobsang Wangdu', email: 'lobsang.wangdu@regilly.com', role: 'user', balance: 350.00 },
+  { id: crypto.randomUUID(), name: 'Kime Sunku', email: 'kime.sunku@regilly.com', role: 'user', balance: 6700.00 },
+  { id: crypto.randomUUID(), name: 'Dani Hancock', email: 'dani.hancock@regilly.com', role: 'user', balance: 150.00 },
+  { id: crypto.randomUUID(), name: 'Padi Laji', email: 'padi.laji@regilly.com', role: 'user', balance: 8900.00 },
+  { id: crypto.randomUUID(), name: 'Likha Sira', email: 'likha.sira@regilly.com', role: 'user', balance: 0.00 },
 ];
 
 async function seedDemoData() {

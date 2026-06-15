@@ -55,12 +55,12 @@ export default function LoginPage() {
   // Utility to prefill inputs with default seed values (makes grading/testing fast)
   const prefill = (type: 'user' | 'admin') => {
     if (type === 'admin') {
-      setEmail('admin@appsc.gov.in');
+      setEmail('admin@regilly.com');
       setPassword('Subham@1234');
       setName('System Administrator');
       setRole('admin');
     } else {
-      setEmail('user@appsc.gov.in');
+      setEmail('user@regilly.com');
       setPassword('Subham@1234');
       setName('Subham Bose');
       setRole('user');
@@ -84,13 +84,13 @@ export default function LoginPage() {
       <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 rounded-full bg-indigo-500/5 blur-3xl" />
 
       <div className="w-full max-w-md relative z-10">
-        {/* Branding header: uses Arunachal Pradesh as required by system guidelines */}
+        {/* Branding header for the Regilly Payment Portal */}
         <div className="flex flex-col items-center mb-8 text-center">
           <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center font-extrabold text-lg tracking-widest text-white shadow-lg mb-3">
-            AP
+            RG
           </div>
           <h1 className="text-xl font-bold text-zinc-100 uppercase tracking-widest">
-            Arunachal Pradesh (APPSC) Portal
+            Regilly Payment Portal
           </h1>
           <p className="text-zinc-500 text-xs font-semibold uppercase tracking-wider mt-1">
             Payment Service Gateway & Wallet Dashboard
@@ -141,7 +141,7 @@ export default function LoginPage() {
               <Input
                 label="Email Address"
                 type="email"
-                placeholder="name@appsc.gov.in"
+                placeholder="name@regilly.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

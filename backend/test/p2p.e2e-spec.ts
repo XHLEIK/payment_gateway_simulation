@@ -41,7 +41,7 @@ describe('P2P & PIN Security (e2e)', () => {
     // 1. Log in as admin to get auth tokens for crediting wallets
     const adminLoginRes = await request(app.getHttpServer())
       .post('/api/auth/login')
-      .send({ email: 'admin@appsc.gov.in', password: 'Subham@1234' });
+      .send({ email: 'admin@regilly.com', password: 'Subham@1234' });
     console.log('Admin login status:', adminLoginRes.status);
     console.log('Admin login body:', adminLoginRes.body);
     adminToken = adminLoginRes.body.access_token;
