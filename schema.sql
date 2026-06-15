@@ -129,7 +129,7 @@ ON CONFLICT (user_id) DO NOTHING;
 
 -- Seed Standard User
 INSERT INTO users (id, name, email, password_hash, role)
-VALUES ('f5e4d3c2-b1a0-9f8e-7d6c-5b4a3f2e1d0c', 'Subham Bose', 'user@appsc.gov.in', '$2b$10$tMoxp.L2xHjY1yXWvIinveVjTeg.wY4o.x452g690v125P32V9g1i', 'user')
+VALUES ('f5e4d3c2-b1a0-9f8e-7d6c-5b4a3f2e1d0c', 'Subham Bose', 'user@appsc.gov.in', '$2b$10$RA.jVR8hPL4kL/JXN9FvuO8MC/IG3SIVh7tbnoWJ2n4iUuiXqD7v2', 'user')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO wallets (user_id, balance)
