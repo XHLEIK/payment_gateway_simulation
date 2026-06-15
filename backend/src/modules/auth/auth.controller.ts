@@ -6,12 +6,14 @@ import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RateLimiterService } from './rate-limiter.service';
 import { Throttle } from '@nestjs/throttler';
+import { CaptchaService } from './captcha.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly rateLimiterService: RateLimiterService,
+    private readonly captchaService: CaptchaService,
   ) {}
 
   /**
@@ -142,7 +144,15 @@ export class AuthController {
     @Req() req: any,
   ) {
     const ip = this.getClientIp(req);
-    const required = await this.rateLimiterService.isCaptchaRequired(ip, email || '');
-    return { captchaRequired: required };
+    const failCount = await this.rateLimiterService.getFailedCount(ip, email || '');
+    return {
+      captchaRequired: failCount >= 5,
+      captchaShown: failCount >= 3,
+    };
+  }
+
+  @Get('captcha')
+  async getCaptcha() {
+    return this.captchaService.generateCaptcha();
   }
 }

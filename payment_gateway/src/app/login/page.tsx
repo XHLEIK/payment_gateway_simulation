@@ -4,8 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../components/providers';
 import { Button, Input, Select, Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui';
-import { Loader2 } from 'lucide-react';
-import Script from 'next/script';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 import api from '../../services/api';
 
 export default function LoginPage() {
@@ -20,10 +19,17 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Password hide/unhide and confirmation states
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   // Security CAPTCHA states
   const [captchaRequired, setCaptchaRequired] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState('');
-  const turnstileWidgetId = useRef<string | null>(null);
+  const [captchaShown, setCaptchaShown] = useState(false);
+  const [captchaId, setCaptchaId] = useState('');
+  const [captchaValue, setCaptchaValue] = useState('');
+  const [captchaSvg, setCaptchaSvg] = useState('');
 
   // If already logged in, redirect user straight to their dashboard
   useEffect(() => {
@@ -32,46 +38,32 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, isLoading, router]);
 
-  // Show captcha if in registration mode (mandatory) or if login brute-force limit reached
-  const showCaptcha = isRegisterMode || captchaRequired;
+  // Show CAPTCHA always for both login and registration
+  const showCaptcha = true;
 
-  // Clear token whenever captcha requirement state changes
-  useEffect(() => {
-    setCaptchaToken('');
-    if (showCaptcha) {
-      renderTurnstileWidget();
+  // Fetch SVG CAPTCHA from backend
+  const fetchCaptcha = async () => {
+    try {
+      setCaptchaValue('');
+      const res = await api.get('/auth/captcha');
+      setCaptchaId(res.data.captchaId);
+      setCaptchaSvg(res.data.captchaSvg);
+    } catch (err) {
+      console.error('Failed to fetch CAPTCHA challenge:', err);
+      setErrorMsg('Failed to load security CAPTCHA. Please try again.');
     }
-  }, [isRegisterMode, captchaRequired]);
-
-  // Render or re-render Turnstile widget dynamically
-  const renderTurnstileWidget = () => {
-    setTimeout(() => {
-      const container = document.getElementById('turnstile-container');
-      if (container && (window as any).turnstile) {
-        try {
-          // Clear container content to prevent multi-rendering
-          container.innerHTML = '';
-          const widgetEl = document.createElement('div');
-          container.appendChild(widgetEl);
-
-          const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA';
-          
-          (window as any).turnstile.render(widgetEl, {
-            sitekey: siteKey,
-            callback: (token: string) => {
-              setCaptchaToken(token);
-              setErrorMsg('');
-            },
-            'error-callback': () => {
-              setErrorMsg('CAPTCHA widget failed to render. Please refresh the page.');
-            },
-          });
-        } catch (e) {
-          console.error('Turnstile render error:', e);
-        }
-      }
-    }, 100);
   };
+
+  // Clear value and load new captcha whenever captcha visibility changes
+  useEffect(() => {
+    setCaptchaValue('');
+    if (showCaptcha) {
+      fetchCaptcha();
+    } else {
+      setCaptchaId('');
+      setCaptchaSvg('');
+    }
+  }, [isRegisterMode, captchaShown, captchaRequired]);
 
   // Check if email has failed logins and needs CAPTCHA
   const handleEmailBlur = async () => {
@@ -79,6 +71,7 @@ export default function LoginPage() {
     try {
       const res = await api.get(`/auth/captcha-required?email=${encodeURIComponent(email)}`);
       setCaptchaRequired(res.data.captchaRequired);
+      setCaptchaShown(res.data.captchaShown);
     } catch (err) {
       console.error('Failed to fetch CAPTCHA requirements:', err);
     }
@@ -109,7 +102,7 @@ export default function LoginPage() {
     setErrorMsg('');
     
     // Check CAPTCHA if required
-    if (showCaptcha && !captchaToken) {
+    if (showCaptcha && (!captchaId || !captchaValue)) {
       setErrorMsg('Please complete the CAPTCHA verification check.');
       return;
     }
@@ -121,13 +114,16 @@ export default function LoginPage() {
         if (!name) {
           throw new Error('Name is required for registration');
         }
+        if (password !== confirmPassword) {
+          throw new Error('Passwords do not match');
+        }
         if (!validatePasswordClient(password)) {
           setSubmitting(false);
           return;
         }
-        await register(name, email, password, captchaToken, role);
+        await register(name, email, password, confirmPassword, captchaId, captchaValue, role);
       } else {
-        await login(email, password, captchaToken);
+        await login(email, password, captchaId, captchaValue);
       }
       router.push('/dashboard');
     } catch (err: any) {
@@ -141,8 +137,11 @@ export default function LoginPage() {
       // Re-trigger CAPTCHA requirement check on error
       if (!isRegisterMode) {
         await handleEmailBlur();
-        // Reset widget token so user has to solve again on fail
-        renderTurnstileWidget();
+      }
+
+      // Since CAPTCHA is one-time use, refresh it on error if visible
+      if (showCaptcha) {
+        fetchCaptcha();
       }
     } finally {
       setSubmitting(false);
@@ -154,11 +153,13 @@ export default function LoginPage() {
     if (type === 'admin') {
       setEmail('admin@regilly.com');
       setPassword('Subham@1234');
+      setConfirmPassword('Subham@1234');
       setName('System Administrator');
       setRole('admin');
     } else {
       setEmail('user@regilly.com');
       setPassword('Subham@1234');
+      setConfirmPassword('Subham@1234');
       setName('Subham Bose');
       setRole('user');
     }
@@ -175,12 +176,6 @@ export default function LoginPage() {
 
   return (
     <div className="flex-1 min-h-screen flex items-center justify-center bg-zinc-950 px-4 py-12 relative overflow-hidden">
-      {/* Turnstile CDN Loader */}
-      <Script 
-        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" 
-        strategy="afterInteractive" 
-        onLoad={renderTurnstileWidget}
-      />
 
       {/* Dynamic background visual gradients */}
       <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-indigo-600/5 blur-3xl" />
@@ -253,12 +248,41 @@ export default function LoginPage() {
 
               <Input
                 label="Password"
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                rightElement={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-zinc-500 hover:text-zinc-300 focus:outline-none p-1 cursor-pointer transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                }
               />
+
+              {isRegisterMode && (
+                <Input
+                  label="Confirm Password"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  rightElement={
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="text-zinc-500 hover:text-zinc-300 focus:outline-none p-1 cursor-pointer transition-colors"
+                    >
+                      {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  }
+                />
+              )}
 
               {isRegisterMode && (
                 <p className="text-[10px] text-zinc-500 leading-tight">
@@ -266,11 +290,46 @@ export default function LoginPage() {
                 </p>
               )}
 
-              {/* Dynamic Turnstile CAPTCHA Widget Placement */}
+              {/* Security CAPTCHA Challenge Component */}
               {showCaptcha && (
-                <div className="my-2 flex flex-col items-center">
-                  <span className="text-xs text-zinc-500 mb-1.5 font-medium">Security Verification Challenge</span>
-                  <div id="turnstile-container" className="min-h-[65px]" />
+                <div className="my-2 p-4 rounded-xl border border-zinc-900 bg-zinc-950/50 flex flex-col gap-3">
+                  <span className="text-xs text-zinc-400 font-semibold uppercase tracking-wider">Security Verification Challenge</span>
+                  <div className="flex gap-3 items-center">
+                    {captchaSvg ? (
+                      <div 
+                        dangerouslySetInnerHTML={{ __html: captchaSvg }} 
+                        className="rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900/40 flex items-center justify-center select-none shadow-inner h-[50px] w-[150px]"
+                      />
+                    ) : (
+                      <div className="h-[50px] w-[150px] rounded-lg border border-zinc-800 bg-zinc-900/40 animate-pulse flex items-center justify-center text-xs text-zinc-600">
+                        Loading...
+                      </div>
+                    )}
+                    <Button 
+                      type="button" 
+                      variant="secondary" 
+                      onClick={fetchCaptcha} 
+                      className="h-[50px] w-[50px] flex items-center justify-center p-0 cursor-pointer border border-zinc-800 bg-zinc-900/20 hover:bg-zinc-900/50 text-zinc-400 hover:text-zinc-200 transition-all rounded-lg"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                        <path d="M3 3v5h5" />
+                        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                        <path d="M16 16h5v5" />
+                      </svg>
+                    </Button>
+                  </div>
+                  <Input
+                    placeholder="Enter captcha text"
+                    value={captchaValue}
+                    onChange={(e) => {
+                      setCaptchaValue(e.target.value);
+                      setErrorMsg('');
+                    }}
+                    className="text-center font-mono tracking-widest text-base bg-zinc-900/60 uppercase"
+                    maxLength={5}
+                    required
+                  />
                 </div>
               )}
 
@@ -280,27 +339,29 @@ export default function LoginPage() {
             </form>
 
             {/* Quick Demo Pre-fill triggers for ease of manual testing */}
-            <div className="mt-6 border-t border-zinc-900/50 pt-5 text-center">
-              <span className="text-xs font-semibold text-zinc-600 uppercase tracking-widest block mb-3">
-                Quick Demo Prefills
-              </span>
-              <div className="flex gap-2.5">
-                <Button 
-                  onClick={() => prefill('user')} 
-                  variant="secondary" 
-                  className="flex-1 text-xs py-1.5 font-bold hover:border-indigo-500/20 cursor-pointer"
-                >
-                  Prefill User
-                </Button>
-                <Button 
-                  onClick={() => prefill('admin')} 
-                  variant="secondary" 
-                  className="flex-1 text-xs py-1.5 font-bold hover:border-indigo-500/20 cursor-pointer"
-                >
-                  Prefill Admin
-                </Button>
+            {!isRegisterMode && (
+              <div className="mt-6 border-t border-zinc-900/50 pt-5 text-center">
+                <span className="text-xs font-semibold text-zinc-600 uppercase tracking-widest block mb-3">
+                  Quick Demo Prefills
+                </span>
+                <div className="flex gap-2.5">
+                  <Button 
+                    onClick={() => prefill('user')} 
+                    variant="secondary" 
+                    className="flex-1 text-xs py-1.5 font-bold hover:border-indigo-500/20 cursor-pointer"
+                  >
+                    Prefill User
+                  </Button>
+                  <Button 
+                    onClick={() => prefill('admin')} 
+                    variant="secondary" 
+                    className="flex-1 text-xs py-1.5 font-bold hover:border-indigo-500/20 cursor-pointer"
+                  >
+                    Prefill Admin
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Switch between Signin and Register views */}
             <div className="mt-5 text-center">
@@ -308,6 +369,9 @@ export default function LoginPage() {
                 onClick={() => {
                   setIsRegisterMode(!isRegisterMode);
                   setErrorMsg('');
+                  setConfirmPassword('');
+                  setShowPassword(false);
+                  setShowConfirmPassword(false);
                 }}
                 className="text-xs font-bold text-zinc-500 hover:text-indigo-400 cursor-pointer transition-colors"
               >

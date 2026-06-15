@@ -26,8 +26,8 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string, captchaToken?: string) => Promise<any>;
-  register: (name: string, email: string, password: string, captchaToken: string, role?: string) => Promise<any>;
+  login: (email: string, password: string, captchaId?: string, captchaValue?: string) => Promise<any>;
+  register: (name: string, email: string, password: string, confirmPassword: string, captchaId: string, captchaValue: string, role?: string) => Promise<any>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
 }
@@ -63,10 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Post login credentials and save CSRF token in Axios memory
-  const login = async (email: string, password: string, captchaToken?: string) => {
+  const login = async (email: string, password: string, captchaId?: string, captchaValue?: string) => {
     setIsLoading(true);
     try {
-      const res = await api.post('/auth/login', { email, password, captchaToken });
+      const res = await api.post('/auth/login', { email, password, captchaId, captchaValue });
       const { user: userData, csrfToken } = res.data;
       setCsrfToken(csrfToken);
       setUser(userData);
@@ -78,10 +78,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Submit candidate registration
-  const register = async (name: string, email: string, password: string, captchaToken: string, role?: string) => {
+  const register = async (name: string, email: string, password: string, confirmPassword: string, captchaId: string, captchaValue: string, role?: string) => {
     setIsLoading(true);
     try {
-      const res = await api.post('/auth/register', { name, email, password, captchaToken, role });
+      const res = await api.post('/auth/register', { name, email, password, confirmPassword, captchaId, captchaValue, role });
       const { user: userData, csrfToken } = res.data;
       setCsrfToken(csrfToken);
       setUser(userData);

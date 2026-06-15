@@ -14,11 +14,18 @@ export class RegisterDto {
   @MinLength(12, { message: 'Password must be at least 12 characters long' })
   password: string;
 
+  @IsString()
+  @MinLength(12, { message: 'Password confirmation must be at least 12 characters long' })
+  confirmPassword: string;
+
   // Role selection. Optional; defaults to 'USER' in users.service
   @IsEnum(UserRole)
   @IsOptional()
   role?: UserRole;
 
   @IsString()
-  captchaToken: string;
+  captchaId: string;
+
+  @IsString()
+  captchaValue: string;
 }

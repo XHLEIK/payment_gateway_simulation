@@ -113,6 +113,12 @@ export class RateLimiterService {
     return failIp >= 5 || failEmail >= 5;
   }
 
+  async getFailedCount(ip: string, email: string): Promise<number> {
+    const failIp = await this.getFailedAttemptCount(ip);
+    const failEmail = await this.getFailedAttemptCount(email);
+    return Math.max(failIp, failEmail);
+  }
+
   /**
    * Tracks a failed login attempt. Locks the account or IP if limits are exceeded.
    */

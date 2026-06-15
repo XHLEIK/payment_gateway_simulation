@@ -10,5 +10,9 @@ export class LoginDto {
 
   @IsString()
   @IsOptional()
-  captchaToken?: string;
+  captchaId?: string;
+
+  @IsString()
+  @IsOptional()
+  captchaValue?: string;
 }

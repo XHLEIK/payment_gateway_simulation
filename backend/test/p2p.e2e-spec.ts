@@ -33,7 +33,7 @@ describe('P2P & PIN Security (e2e)', () => {
     })
       .overrideProvider(CaptchaService)
       .useValue({
-        verifyToken: async () => true, // Mock CAPTCHA verification to pass during tests
+        verifyCaptcha: async () => true, // Mock CAPTCHA verification to pass during tests
       })
       .compile();
 
@@ -75,7 +75,9 @@ describe('P2P & PIN Security (e2e)', () => {
         name: 'Sender Candidate', 
         email: senderEmail, 
         password,
-        captchaToken: '1x00000000000000000000AA'
+        confirmPassword: password,
+        captchaId: 'mock-captcha-id',
+        captchaValue: 'mock-captcha-value'
       });
     senderId = registerSenderRes.body.user.id;
 
@@ -86,7 +88,9 @@ describe('P2P & PIN Security (e2e)', () => {
         name: 'Recipient Candidate', 
         email: recipientEmail, 
         password,
-        captchaToken: '1x00000000000000000000AA'
+        confirmPassword: password,
+        captchaId: 'mock-captcha-id',
+        captchaValue: 'mock-captcha-value'
       });
     recipientId = registerRecipientRes.body.user.id;
 

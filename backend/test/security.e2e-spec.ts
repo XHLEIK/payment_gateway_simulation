@@ -17,12 +17,16 @@ describe('Authentication Security (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      // Mock CaptchaService to isolate testing and avoid hitting external Cloudflare challenges
+      // Mock CaptchaService to isolate testing and avoid hitting local Redis captcha keys during E2E tests
       .overrideProvider(CaptchaService)
       .useValue({
-        verifyToken: async (token: string) => {
-          if (!token) return false;
-          if (token === 'invalid_token') return false;
+        generateCaptcha: async () => ({
+          captchaId: 'mock-captcha-id',
+          captchaSvg: '<svg>mock-svg</svg>',
+        }),
+        verifyCaptcha: async (captchaId: string, captchaValue: string) => {
+          if (!captchaId || !captchaValue) return false;
+          if (captchaValue === 'invalid_value') return false;
           return true;
         },
       })
@@ -65,27 +69,30 @@ describe('Authentication Security (e2e)', () => {
   });
 
   describe('CAPTCHA Verification', () => {
-    it('should reject registration attempts if CAPTCHA token is missing', async () => {
+    it('should reject registration attempts if CAPTCHA fields are missing', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/auth/register')
         .send({
           name: 'Security Test',
           email: 'test_sec_reg@regilly.com',
           password: 'Password@123456',
+          confirmPassword: 'Password@123456',
         })
         .expect(400);
 
-      expect(res.body.message).toContain('captchaToken must be a string');
+      expect(res.body.message).toContain('captchaId must be a string');
     });
 
-    it('should reject registration attempts if CAPTCHA token is invalid', async () => {
+    it('should reject registration attempts if CAPTCHA value is invalid', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/auth/register')
         .send({
           name: 'Security Test',
           email: 'test_sec_reg@regilly.com',
           password: 'Password@123456',
-          captchaToken: 'invalid_token',
+          confirmPassword: 'Password@123456',
+          captchaId: 'mock-captcha-id',
+          captchaValue: 'invalid_value',
         })
         .expect(400);
 
@@ -101,7 +108,9 @@ describe('Authentication Security (e2e)', () => {
           name: 'Security Test',
           email: 'test_sec_reg_short@regilly.com',
           password: 'Pass@123',
-          captchaToken: '1x00000000000000000000AA', // Mock valid test token
+          confirmPassword: 'Pass@123',
+          captchaId: 'mock-captcha-id',
+          captchaValue: 'mock-captcha-value',
         })
         .expect(400);
 
@@ -115,7 +124,9 @@ describe('Authentication Security (e2e)', () => {
           name: 'Security Test',
           email: 'test_sec_reg_common@regilly.com',
           password: 'qwertyuiopasdf',
-          captchaToken: '1x00000000000000000000AA',
+          confirmPassword: 'qwertyuiopasdf',
+          captchaId: 'mock-captcha-id',
+          captchaValue: 'mock-captcha-value',
         })
         .expect(400);
 
