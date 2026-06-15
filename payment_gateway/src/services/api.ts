@@ -9,7 +9,7 @@ export function setCsrfToken(token: string | null) {
 // Central Axios API connection client.
 // Configures target baseURL and handles request intercepts for authentication and tracing headers.
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api', // Targets local NestJS backend server port
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api', // Targets local NestJS backend server port
   withCredentials: true, // Crucial: enables automatic cookie handling for HTTP-Only sessions
   headers: {
     'Content-Type': 'application/json',

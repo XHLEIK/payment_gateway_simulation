@@ -48,8 +48,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(res.data);
           setCsrfToken(res.data.csrfToken);
         }
-      } catch (err) {
-        console.error('Failed to restore session:', err);
+      } catch (err: any) {
+        if (err.response?.status !== 401) {
+          console.error('Failed to restore session:', err);
+        }
         // Clear any old csrf configuration
         setCsrfToken(null);
         setUser(null);
