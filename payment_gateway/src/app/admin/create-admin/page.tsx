@@ -98,7 +98,7 @@ export default function CreateAdminPage() {
           <ShieldAlert className="h-12 w-12 text-red-500 mb-4" />
           <h2 className="text-xl font-bold text-zinc-100">Unauthorized Access</h2>
           <p className="text-zinc-500 text-sm mt-1">
-            Only administrators are authorized to access this section of the Arunachal Pradesh Portal.
+            Only administrators are authorized to access this section of the Regilly Portal.
           </p>
         </div>
       </LayoutShell>
