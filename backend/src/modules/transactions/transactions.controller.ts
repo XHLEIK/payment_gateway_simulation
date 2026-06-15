@@ -7,7 +7,6 @@ import {
   Query,
   UseGuards,
   ForbiddenException,
-  NotFoundException,
   Req,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
@@ -20,7 +19,6 @@ import { TransactionStatus, TransactionType } from './entities/transaction.entit
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { UsersService } from '../users/users.service';
-import { AuditLoggerService } from '../auth/audit-logger.service';
 
 @Controller('transactions')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -29,7 +27,6 @@ export class TransactionsController {
     private readonly transactionsService: TransactionsService,
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
-    private readonly auditLogger: AuditLoggerService,
   ) {}
 
   // Retrieves all transactions. Standard users are forced to view only their own records,
@@ -82,9 +79,6 @@ export class TransactionsController {
         gatewayPaymentId: item.gatewayPaymentId,
         linkedTransactionId: item.linkedTransactionId,
         reversalReason: item.reversalReason,
-        createdBy: item.createdBy,
-        createdByAdminId: item.createdByAdminId,
-        ownerId: item.ownerId,
         createdAt: item.createdAt,
         user: user.role === UserRole.ADMIN ? {
           id: item.user?.id,
@@ -155,9 +149,6 @@ export class TransactionsController {
       gatewayPaymentId: txn.gatewayPaymentId,
       linkedTransactionId: txn.linkedTransactionId,
       reversalReason: txn.reversalReason,
-      createdBy: txn.createdBy,
-      createdByAdminId: txn.createdByAdminId,
-      ownerId: txn.ownerId,
       createdAt: txn.createdAt,
       auditLogs: txn.auditLogs.map((log) => ({
         fromStatus: log.fromStatus,
@@ -190,53 +181,7 @@ export class TransactionsController {
       throw new ForbiddenException('Please provide a valid reason for the reversal request');
     }
 
-    // 1. Verify requester is admin
-    if (user.role !== UserRole.ADMIN) {
-      this.auditLogger.logTransactionActionAttempt(
-        user.userId,
-        id,
-        'rollback',
-        false,
-        'User is not an administrator',
-      );
-      throw new ForbiddenException('Only administrators can request rollbacks');
-    }
-
-    // 2. Fetch transaction and verify ownership
-    let txn;
-    try {
-      txn = await this.transactionsService.findOne(id);
-    } catch (err) {
-      this.auditLogger.logTransactionActionAttempt(
-        user.userId,
-        id,
-        'rollback',
-        false,
-        'Transaction not found',
-      );
-      throw err;
-    }
-
-    if (txn.createdBy !== user.userId) {
-      this.auditLogger.logTransactionActionAttempt(
-        user.userId,
-        id,
-        'rollback',
-        false,
-        'User is not the original creator of this transaction',
-      );
-      throw new ForbiddenException('You are not authorized to rollback this transaction');
-    }
-
     const result = await this.transactionsService.requestReversal(id, user.userId, reason);
-
-    // 3. Log success
-    this.auditLogger.logTransactionActionAttempt(
-      user.userId,
-      id,
-      'rollback',
-      true,
-    );
 
     // Notify all admin users about the pending reversal claim
     const allUsers = await this.usersService.findAll();

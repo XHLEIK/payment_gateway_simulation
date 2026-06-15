@@ -399,8 +399,8 @@ export default function TransactionsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1.5">
-                            {/* P2P Rollback action button trigger: Only visible on successful outbox transfers if logged-in admin is the transaction creator */}
-                            {user?.role === 'admin' && tx.createdBy === user?.id && tx.type === 'TRANSFER' && tx.status === 'SUCCESS' && tx.referenceId.startsWith('TXN-SND-') && (
+                            {/* P2P Rollback action button trigger: Only visible on successful outbox transfers */}
+                            {tx.type === 'TRANSFER' && tx.status === 'SUCCESS' && tx.referenceId.startsWith('TXN-SND-') && (
                               <Button
                                 onClick={() => {
                                   setActiveTxnForReversal(tx);
@@ -414,8 +414,8 @@ export default function TransactionsPage() {
                                 Rollback
                               </Button>
                             )}
-                            {/* Dispute trigger button: open dispute forms on any completed transaction if logged-in admin is the transaction creator */}
-                            {user?.role === 'admin' && tx.createdBy === user?.id && tx.status !== 'FAILED' && (
+                            {/* Dispute trigger button: open dispute forms on any completed transaction */}
+                            {tx.status !== 'FAILED' && (
                               <Button
                                 onClick={() => {
                                   setActiveTxnForDispute(tx);

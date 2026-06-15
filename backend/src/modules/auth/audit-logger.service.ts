@@ -100,24 +100,6 @@ export class AuditLoggerService {
   }
 
   /**
-   * Logs a dispute or rollback attempt.
-   */
-  logTransactionActionAttempt(
-    adminId: string,
-    transactionId: string,
-    actionType: 'dispute' | 'rollback',
-    success: boolean,
-    failureReason?: string,
-  ) {
-    const timestamp = new Date().toISOString();
-    this.logger.log(
-      `[ACTION_ATTEMPT] AdminID: ${adminId} | TransactionID: ${transactionId} | ActionType: ${actionType} | Success: ${success} | Timestamp: ${timestamp}${
-        failureReason ? ` | FailureReason: ${failureReason}` : ''
-      }`
-    );
-  }
-
-  /**
    * Helper to mask email address to prevent PII leakage in logs.
    */
   private maskEmail(email: string): string {

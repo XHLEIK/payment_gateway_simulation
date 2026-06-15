@@ -11,7 +11,6 @@ import { Transaction, TransactionStatus, TransactionType } from './entities/tran
 import { TransactionAudit } from './entities/transaction-audit.entity';
 import { WalletsService } from '../wallets/wallets.service';
 import { Wallet } from '../wallets/entities/wallet.entity';
-import { User, UserRole } from '../users/entities/user.entity';
 import { randomBytes } from 'crypto';
 
 @Injectable()
@@ -57,10 +56,6 @@ export class TransactionsService {
 
     const referenceId = `TXN-${randomBytes(4).toString('hex').toUpperCase()}`;
 
-    // Check if the creator is an admin
-    const creatorUser = await this.dataSource.getRepository(User).findOne({ where: { id: userId } });
-    const createdByAdminId = creatorUser?.role === UserRole.ADMIN ? userId : null;
-
     // Create initiated transaction row in DB
     const transaction = this.transactionRepository.create({
       referenceId,
@@ -69,9 +64,6 @@ export class TransactionsService {
       type,
       status: TransactionStatus.INITIATED,
       requestId,
-      createdBy: userId,
-      createdByAdminId,
-      ownerId: userId,
     });
 
     const savedTxn = await this.transactionRepository.save(transaction);

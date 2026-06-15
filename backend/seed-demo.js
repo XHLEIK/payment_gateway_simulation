@@ -94,10 +94,10 @@ async function seedDemoData() {
       }
 
       const res = await client.query(
-        `INSERT INTO transactions (reference_id, user_id, amount, type, status, gateway_order_id, gateway_payment_id, request_id, balance_after, created_by, created_by_admin_id, owner_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $10, $11, $11)
+        `INSERT INTO transactions (reference_id, user_id, amount, type, status, gateway_order_id, gateway_payment_id, request_id, balance_after, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
          RETURNING id, amount, type, status, created_at`,
-        [refId, user.id, amount, type, status, gatewayOrderId, gatewayPaymentId, reqId, balanceAfter, user.id, date]
+        [refId, user.id, amount, type, status, gatewayOrderId, gatewayPaymentId, reqId, balanceAfter, date]
       );
       insertedTransactions.push(res.rows[0]);
 
@@ -130,10 +130,10 @@ async function seedDemoData() {
       const gatewayOrderId = `order_fail_${crypto.randomBytes(6).toString('hex')}`;
 
       const res = await client.query(
-        `INSERT INTO transactions (reference_id, user_id, amount, type, status, gateway_order_id, request_id, created_by, created_by_admin_id, owner_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $8, $9, $9)
+        `INSERT INTO transactions (reference_id, user_id, amount, type, status, gateway_order_id, request_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
          RETURNING id, amount, type, status, created_at`,
-        [refId, user.id, amount, type, status, gatewayOrderId, reqId, user.id, date]
+        [refId, user.id, amount, type, status, gatewayOrderId, reqId, date]
       );
       insertedTransactions.push(res.rows[0]);
 

@@ -79,9 +79,6 @@ export class WalletController {
         type: TransactionType.CREDIT,
         status: TransactionStatus.SUCCESS,
         requestId: `ADMIN-CREDIT-${Date.now()}-${randomBytes(2).toString('hex')}`,
-        createdBy: admin.userId,
-        createdByAdminId: admin.userId,
-        ownerId: userId,
       });
       const savedTxn = await manager.getRepository(Transaction).save(txn);
 

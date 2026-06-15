@@ -7,7 +7,6 @@ import { TransactionsController } from './transactions.controller';
 import { WalletModule } from '../wallets/wallets.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
-import { AuthModule } from '../auth/auth.module';
 
 // Transactions module handles all balance transfers, auditing, and query logic.
 // We require WalletsModule for balance checks/locking, NotificationsModule for alerts,
@@ -19,7 +18,6 @@ import { AuthModule } from '../auth/auth.module';
     WalletModule,
     NotificationsModule,
     UsersModule,
-    AuthModule,
   ],
   providers: [TransactionsService],
   controllers: [TransactionsController],

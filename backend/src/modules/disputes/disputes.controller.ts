@@ -7,7 +7,6 @@ import {
   Param,
   Query,
   UseGuards,
-  ForbiddenException,
 } from '@nestjs/common';
 import { DisputesService } from './disputes.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -16,17 +15,11 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { DisputeStatus } from './entities/dispute.entity';
-import { TransactionsService } from '../transactions/transactions.service';
-import { AuditLoggerService } from '../auth/audit-logger.service';
 
 @Controller('disputes')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class DisputesController {
-  constructor(
-    private readonly disputesService: DisputesService,
-    private readonly transactionsService: TransactionsService,
-    private readonly auditLogger: AuditLoggerService,
-  ) {}
+  constructor(private readonly disputesService: DisputesService) {}
 
   // Post endpoint for candidates to log a dispute claim on a specific transaction
   @Post()
@@ -34,62 +27,12 @@ export class DisputesController {
     @CurrentUser() user: any,
     @Body() body: { transactionId: string; reason: string; evidence?: string },
   ) {
-    const { transactionId, reason, evidence } = body;
-
-    // 1. Verify requester is admin
-    if (user.role !== UserRole.ADMIN) {
-      this.auditLogger.logTransactionActionAttempt(
-        user.userId,
-        transactionId,
-        'dispute',
-        false,
-        'User is not an administrator',
-      );
-      throw new ForbiddenException('Only administrators can file disputes');
-    }
-
-    // 2. Load transaction and verify ownership
-    let txn;
-    try {
-      txn = await this.transactionsService.findOne(transactionId);
-    } catch (err) {
-      this.auditLogger.logTransactionActionAttempt(
-        user.userId,
-        transactionId,
-        'dispute',
-        false,
-        'Transaction not found',
-      );
-      throw err;
-    }
-
-    if (txn.createdBy !== user.userId) {
-      this.auditLogger.logTransactionActionAttempt(
-        user.userId,
-        transactionId,
-        'dispute',
-        false,
-        'User is not the original creator of this transaction',
-      );
-      throw new ForbiddenException('You are not authorized to dispute this transaction');
-    }
-
-    const result = await this.disputesService.create(
+    return this.disputesService.create(
       user.userId,
-      transactionId,
-      reason,
-      evidence,
+      body.transactionId,
+      body.reason,
+      body.evidence,
     );
-
-    // 3. Log success
-    this.auditLogger.logTransactionActionAttempt(
-      user.userId,
-      transactionId,
-      'dispute',
-      true,
-    );
-
-    return result;
   }
 
   // Lists disputes. Restricts standard users to only their own claims,
