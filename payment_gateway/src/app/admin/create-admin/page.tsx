@@ -81,8 +81,8 @@ export default function CreateAdminPage() {
       const rawMsg = err.response?.data?.message;
       const formattedMsg = Array.isArray(rawMsg) ? rawMsg.join('\n') : rawMsg;
       setErrorMsg(
-        formattedMsg || 
-        err.message || 
+        formattedMsg ||
+        err.message ||
         'Failed to create admin account. Ensure email is unique.'
       );
     } finally {
@@ -110,13 +110,13 @@ export default function CreateAdminPage() {
       <div className="max-w-md mx-auto py-8 relative">
         {/* Gradients */}
         <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full bg-indigo-600/5 blur-3xl pointer-events-none" />
-        
+
         <div className="flex flex-col items-center mb-6 text-center relative z-10">
           <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg mb-3">
             <UserPlus className="h-6 w-6" />
           </div>
           <h1 className="text-xl font-bold text-zinc-100 uppercase tracking-widest">
-            Arunachal Pradesh Portal
+            Regilly Portal
           </h1>
           <p className="text-zinc-500 text-xs font-semibold uppercase tracking-wider mt-1">
             Admin Management & Access Control
@@ -129,7 +129,7 @@ export default function CreateAdminPage() {
               Create Administrator
             </CardTitle>
             <CardDescription className="text-zinc-500 text-xs">
-              Add a new administrator to manage the Arunachal Pradesh Payment Gateway.
+              Add a new administrator to manage the Regilly Payment Gateway.
             </CardDescription>
           </CardHeader>
           <CardContent>
