@@ -28,5 +28,6 @@ GEMINI.md
 
 # Documentation and project specs
 *.pdf
+*.txt
 explanation.md
-
+pdf_text.txt

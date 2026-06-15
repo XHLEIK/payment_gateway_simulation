@@ -8,6 +8,7 @@ import { UsersService } from '../users/users.service';
 import { TransactionAudit } from '../transactions/entities/transaction-audit.entity';
 import { RedisService } from '../redis/redis.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { UserRole } from '../users/entities/user.entity';
 import { randomBytes } from 'crypto';
 
 @Injectable()
@@ -218,6 +219,7 @@ export class WalletsService {
     requestId: string,
     simulateFailure: boolean = false,
     simulateProcessing: boolean = false,
+    simulateRandom: boolean = false,
   ): Promise<any> {
     if (amount <= 0) {
       throw new BadRequestException('Transfer amount must be greater than zero');
@@ -236,6 +238,9 @@ export class WalletsService {
       throw new BadRequestException('Cannot transfer money to yourself');
     }
 
+    const sender = await this.usersService.findById(senderId);
+    const createdByAdminId = sender.role === UserRole.ADMIN ? senderId : null;
+
     // 3. Idempotency check to prevent processing double clicks
     const existing = await this.transactionRepository.findOne({
       where: { requestId, userId: senderId },
@@ -253,6 +258,19 @@ export class WalletsService {
     // 4. Ensure transfer doesn't exceed user's daily spend limit
     await this.checkDailyLimit(senderId, amount);
 
+    let activeFailure = simulateFailure;
+    let activeProcessing = simulateProcessing;
+
+    if (process.env.NODE_ENV !== 'test' && !simulateFailure && !simulateProcessing) {
+      if (Math.random() < 0.20) {
+        if (Math.random() < 0.5) {
+          activeFailure = true;
+        } else {
+          activeProcessing = true;
+        }
+      }
+    }
+
     // 5. Run direct transfer inside a SERIALIZABLE transaction block to guarantee correctness
     return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
       const walletRepo = manager.getRepository(Wallet);
@@ -263,7 +281,7 @@ export class WalletsService {
       const refIdRecipient = `TXN-RCV-${randomBytes(4).toString('hex').toUpperCase()}`;
 
       // ---- SIMULATE FAILED PAYMENT (for review demonstration) ----
-      if (simulateFailure) {
+      if (activeFailure) {
         const senderTxn = transactionRepo.create({
           referenceId: refIdSender,
           userId: senderId,
@@ -272,6 +290,9 @@ export class WalletsService {
           status: TransactionStatus.FAILED,
           requestId,
           linkedTransactionId: null,
+          createdBy: senderId,
+          createdByAdminId,
+          ownerId: senderId,
         });
         const savedSenderTxn = await transactionRepo.save(senderTxn);
 
@@ -283,6 +304,9 @@ export class WalletsService {
           status: TransactionStatus.FAILED,
           requestId: `${requestId}-rcv`,
           linkedTransactionId: savedSenderTxn.id,
+          createdBy: senderId,
+          createdByAdminId,
+          ownerId: recipient.id,
         });
         await transactionRepo.save(recipientTxn);
 
@@ -308,7 +332,7 @@ export class WalletsService {
       }
 
       // ---- SIMULATE PROCESSING (holds transfer in admin review queue) ----
-      if (simulateProcessing) {
+      if (activeProcessing) {
         const senderTxn = transactionRepo.create({
           referenceId: refIdSender,
           userId: senderId,
@@ -317,6 +341,9 @@ export class WalletsService {
           status: TransactionStatus.PROCESSING,
           requestId,
           linkedTransactionId: null,
+          createdBy: senderId,
+          createdByAdminId,
+          ownerId: senderId,
         });
         const savedSenderTxn = await transactionRepo.save(senderTxn);
 
@@ -328,6 +355,9 @@ export class WalletsService {
           status: TransactionStatus.PROCESSING,
           requestId: `${requestId}-rcv`,
           linkedTransactionId: savedSenderTxn.id,
+          createdBy: senderId,
+          createdByAdminId,
+          ownerId: recipient.id,
         });
         const savedRecipientTxn = await transactionRepo.save(recipientTxn);
 
@@ -395,6 +425,9 @@ export class WalletsService {
         status: TransactionStatus.SUCCESS,
         requestId,
         balanceAfter: senderWallet.balance,
+        createdBy: senderId,
+        createdByAdminId,
+        ownerId: senderId,
       });
       const savedSenderTxn = await transactionRepo.save(senderTxn);
 
@@ -408,6 +441,9 @@ export class WalletsService {
         requestId: `${requestId}-rcv`,
         balanceAfter: recipientWallet.balance,
         linkedTransactionId: savedSenderTxn.id,
+        createdBy: senderId,
+        createdByAdminId,
+        ownerId: recipient.id,
       });
       const savedRecipientTxn = await transactionRepo.save(recipientTxn);
 

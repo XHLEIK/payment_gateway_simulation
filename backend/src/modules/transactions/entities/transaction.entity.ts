@@ -108,6 +108,15 @@ export class Transaction {
   @Column({ name: 'reversal_reason', type: 'varchar', nullable: true })
   reversalReason: string | null;
 
+  @Column({ name: 'created_by', type: 'uuid', nullable: true })
+  createdBy: string | null;
+
+  @Column({ name: 'created_by_admin_id', type: 'uuid', nullable: true })
+  createdByAdminId: string | null;
+
+  @Column({ name: 'owner_id', type: 'uuid', nullable: true })
+  ownerId: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt: Date;
 

@@ -5,6 +5,7 @@ import { DisputesService } from './disputes.service';
 import { DisputesController } from './disputes.controller';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   // Load Dispute entity and business module dependencies for resolving disputes and notifying users
@@ -12,6 +13,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     TypeOrmModule.forFeature([Dispute]),
     TransactionsModule,
     NotificationsModule,
+    AuthModule,
   ],
   providers: [DisputesService],
   controllers: [DisputesController],

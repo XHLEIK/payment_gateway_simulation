@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     balance_after NUMERIC(15, 2), -- Snapshotted wallet balance after the transaction completes
     linked_transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL, -- Circular/reversal link
     reversal_reason TEXT, -- Reversal audit explanation
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_by_admin_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

@@ -79,6 +79,9 @@ export class WalletController {
         type: TransactionType.CREDIT,
         status: TransactionStatus.SUCCESS,
         requestId: `ADMIN-CREDIT-${Date.now()}-${randomBytes(2).toString('hex')}`,
+        createdBy: admin.userId,
+        createdByAdminId: admin.userId,
+        ownerId: userId,
       });
       const savedTxn = await manager.getRepository(Transaction).save(txn);
 
@@ -113,9 +116,10 @@ export class WalletController {
       requestId: string;
       simulateFailure?: boolean;
       simulateProcessing?: boolean;
+      simulateRandom?: boolean;
     },
   ) {
-    const { recipientEmail, amount, pin, requestId, simulateFailure, simulateProcessing } = body;
+    const { recipientEmail, amount, pin, requestId, simulateFailure, simulateProcessing, simulateRandom } = body;
 
     // Delegate business logic to wallets service
     const result = await this.walletsService.sendMoney(
@@ -126,10 +130,11 @@ export class WalletController {
       requestId,
       simulateFailure || false,
       simulateProcessing || false,
+      simulateRandom || false,
     );
 
     // If the transfer went through immediately, send a push-alert history event
-    if (!simulateFailure && !simulateProcessing && result.balance !== undefined) {
+    if (result.status !== TransactionStatus.FAILED && result.status !== TransactionStatus.PROCESSING && result.balance !== undefined) {
       try {
         await this.notificationsService.create(
           user.userId, 

@@ -610,8 +610,11 @@ export default function WalletPage() {
                            <button
                              type="button"
                              onClick={() => {
-                               setSimulateFailure(!simulateFailure);
-                               if (!simulateFailure) setSimulateProcessing(false);
+                               const newVal = !simulateFailure;
+                               setSimulateFailure(newVal);
+                               if (newVal) {
+                                 setSimulateProcessing(false);
+                               }
                              }}
                              className={`w-9 h-5 rounded-full transition-colors relative focus:outline-none cursor-pointer ${
                                simulateFailure ? 'bg-red-600' : 'bg-zinc-800'
@@ -630,8 +633,11 @@ export default function WalletPage() {
                            <button
                              type="button"
                              onClick={() => {
-                               setSimulateProcessing(!simulateProcessing);
-                               if (!simulateProcessing) setSimulateFailure(false);
+                               const newVal = !simulateProcessing;
+                               setSimulateProcessing(newVal);
+                               if (newVal) {
+                                 setSimulateFailure(false);
+                               }
                              }}
                              className={`w-9 h-5 rounded-full transition-colors relative focus:outline-none cursor-pointer ${
                                simulateProcessing ? 'bg-amber-600' : 'bg-zinc-800'
@@ -643,6 +649,12 @@ export default function WalletPage() {
                                }`} 
                              />
                            </button>
+                        </div>
+
+                        <div className="pt-1.5 border-t border-zinc-900 mt-1">
+                          <p className="text-[10px] text-zinc-400 font-normal leading-relaxed italic">
+                            * Note: 80% Success Rate simulation is active. Transactions have a random 20% chance of failing or entering processing state unless forced by the toggles above.
+                          </p>
                         </div>
                       </div>
 

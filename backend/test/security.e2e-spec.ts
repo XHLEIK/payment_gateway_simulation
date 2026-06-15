@@ -515,4 +515,204 @@ describe('Authentication Security (e2e)', () => {
         .expect(401);
     });
   });
+
+  describe('Transaction Ownership & Authorization Security', () => {
+    let adminBEmail: string;
+    let adminAId: string;
+    let adminBId: string;
+    let userId: string;
+
+    let txCreatedByAdminA: string;
+    let txCreatedByAdminB: string;
+
+    beforeAll(async () => {
+      // Clear rate limits
+      const client = redisService.getClient();
+      const keys = await client.keys('rate:*');
+      if (keys.length > 0) await client.del(...keys);
+
+      // Log in as Admin A
+      const adminALogin = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'admin@regilly.com', password: 'Subham@1234' })
+        .expect(200);
+      const adminAToken = adminALogin.body.access_token;
+
+      const adminAMe = await request(app.getHttpServer())
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${adminAToken}`)
+        .expect(200);
+      adminAId = adminAMe.body.id;
+
+      // Create Admin B
+      adminBEmail = `admin_b_${Date.now()}@regilly.com`;
+      const createAdminB = await request(app.getHttpServer())
+        .post('/api/auth/create-admin')
+        .set('Authorization', `Bearer ${adminAToken}`)
+        .send({
+          name: 'Admin B',
+          email: adminBEmail,
+          password: 'SecurePassword@987!',
+          confirmPassword: 'SecurePassword@987!',
+        })
+        .expect(201);
+      adminBId = createAdminB.body.user.id;
+
+      // Log in as Standard User
+      const userLogin = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'user@regilly.com', password: 'Subham@1234' })
+        .expect(200);
+      const userToken = userLogin.body.access_token;
+
+      const userMe = await request(app.getHttpServer())
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${userToken}`)
+        .expect(200);
+      userId = userMe.body.id;
+
+      // Create Transactions in DB
+      txCreatedByAdminA = await createTestTransaction(
+        adminAId,
+        userId,
+        adminAId,
+        `TXN-SND-ADMINA-${Date.now()}-${require('crypto').randomBytes(2).toString('hex')}`,
+        `REQ-ADMINA-ROLLBACK-${Date.now()}-${require('crypto').randomBytes(2).toString('hex')}`,
+      );
+
+      txCreatedByAdminB = await createTestTransaction(
+        adminBId,
+        userId,
+        adminBId,
+        `TXN-SND-ADMINB-${Date.now()}-${require('crypto').randomBytes(2).toString('hex')}`,
+        `REQ-ADMINB-ROLLBACK-${Date.now()}-${require('crypto').randomBytes(2).toString('hex')}`,
+      );
+    });
+
+    async function getAdminAToken() {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'admin@regilly.com', password: 'Subham@1234' })
+        .expect(200);
+      return res.body.access_token;
+    }
+
+    async function getAdminBToken() {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: adminBEmail, password: 'SecurePassword@987!' })
+        .expect(200);
+      return res.body.access_token;
+    }
+
+    async function getUserToken() {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'user@regilly.com', password: 'Subham@1234' })
+        .expect(200);
+      return res.body.access_token;
+    }
+
+    async function createTestTransaction(
+      senderId: string,
+      recipientId: string,
+      createdBy: string,
+      refId: string,
+      reqId: string,
+    ) {
+      const { DataSource } = require('typeorm');
+      const dataSource = app.get(DataSource);
+      const queryRunner = dataSource.createQueryRunner();
+      await queryRunner.connect();
+
+      const senderTxId = require('crypto').randomUUID();
+      const recipientTxId = require('crypto').randomUUID();
+      
+      // Sender transaction (linked_transaction_id is NULL initially)
+      await queryRunner.query(
+        `INSERT INTO transactions (id, reference_id, user_id, amount, type, status, request_id, created_by, created_by_admin_id, owner_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $3)`,
+        [senderTxId, refId, senderId, 100.00, 'TRANSFER', 'SUCCESS', reqId, createdBy]
+      );
+
+      // Recipient transaction (points to senderTxId)
+      await queryRunner.query(
+        `INSERT INTO transactions (id, reference_id, user_id, amount, type, status, request_id, created_by, created_by_admin_id, owner_id, linked_transaction_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $3, $9)`,
+        [recipientTxId, refId + '-RCV', recipientId, 100.00, 'TRANSFER_CREDIT', 'SUCCESS', reqId + '-rcv', createdBy, senderTxId]
+      );
+
+      // Update sender transaction (points to recipientTxId)
+      await queryRunner.query(
+        `UPDATE transactions SET linked_transaction_id = $1 WHERE id = $2`,
+        [recipientTxId, senderTxId]
+      );
+      
+      await queryRunner.release();
+      return senderTxId;
+    }
+
+    it('should allow Admin A to request rollback of a transaction created by Admin A', async () => {
+      const token = await getAdminAToken();
+      await request(app.getHttpServer())
+        .post(`/api/transactions/${txCreatedByAdminA}/request-reversal`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ reason: 'Mistake rollback request' })
+        .expect(201);
+    });
+
+    it('should allow Admin A to dispute a transaction created by Admin A', async () => {
+      const token = await getAdminAToken();
+      await request(app.getHttpServer())
+        .post('/api/disputes')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          transactionId: txCreatedByAdminA,
+          reason: 'Dispute reason Admin A',
+        })
+        .expect(201);
+    });
+
+    it('should reject rollback attempt if Admin A requests rollback on Admin B transaction', async () => {
+      const token = await getAdminAToken();
+      await request(app.getHttpServer())
+        .post(`/api/transactions/${txCreatedByAdminB}/request-reversal`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ reason: 'Malicious rollback attempt' })
+        .expect(403);
+    });
+
+    it('should reject dispute attempt if Admin A disputes Admin B transaction', async () => {
+      const token = await getAdminAToken();
+      await request(app.getHttpServer())
+        .post('/api/disputes')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          transactionId: txCreatedByAdminB,
+          reason: 'Malicious dispute attempt',
+        })
+        .expect(403);
+    });
+
+    it('should reject rollback attempt if a standard user requests rollback', async () => {
+      const token = await getUserToken();
+      await request(app.getHttpServer())
+        .post(`/api/transactions/${txCreatedByAdminA}/request-reversal`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ reason: 'User rollback attempt' })
+        .expect(403);
+    });
+
+    it('should reject dispute attempt if a standard user disputes a transaction', async () => {
+      const token = await getUserToken();
+      await request(app.getHttpServer())
+        .post('/api/disputes')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          transactionId: txCreatedByAdminA,
+          reason: 'User dispute attempt',
+        })
+        .expect(403);
+    });
+  });
 });
