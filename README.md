@@ -272,3 +272,119 @@ All state-changing endpoints (POST, PATCH, DELETE) require a valid CSRF token pa
 * `GET /api/reports/download`
   - **Description**: Exports transaction logs to a download-ready CSV ledger.
   - **QueryParams**: `?startDate=&endDate=&type=&status=`
+
+---
+
+## 📸 Screen References & Functional Walkthrough
+
+Here is a visual index of the system interfaces accompanied by their core operational features:
+
+### 1. User & Admin Login (`login.png`)
+![User & Admin Login Panel](./pic/login.png)
+* **Functionality**:
+  - Combined login and registration gateway for candidate users and administrators.
+  - Session hijacking protection through secure HTTP-Only, SameSite=Strict cookies.
+  - Rate limiting & CAPTCHA: displays custom distorted math CAPTCHA challenges dynamically after 3 failed login attempts, becoming mandatory after 5.
+  - 15-minute account lockout triggered after 10 consecutive failed password attempts.
+
+### 2. Candidate Registration (`register.png`)
+![Candidate Registration](./pic/register.png)
+* **Functionality**:
+  - Register standard candidate profiles (restricted strictly to `user` privilege levels).
+  - Enforces ASVS password complexity rules (length >= 12, uppercase/lowercase, digit, symbol, sequential pattern blocks).
+  - Turnstile & Captcha validation verification.
+
+### 3. User Dashboard (`user dashboard.png`)
+![Candidate Command Center](./pic/user%20dashboard.png)
+* **Functionality**:
+  - Real-time balance display, quick actions, and unread notification counter badge.
+  - Displays recent transactions logs, tracking balance changes.
+
+### 4. Admin Dashboard (`admin dashboard.png`)
+![Admin Operations Hub](./pic/admin%20dashboard.png)
+* **Functionality**:
+  - Master operations board highlighting total transaction count, overall volume, and successful/failed counters.
+  - Real-time system monitoring dashboard linking to admin queues.
+
+### 5. Deposit Top-Up Portal (`deposit.png`)
+![Wallet Deposit Checkout](./pic/deposit.png)
+* **Functionality**:
+  - Initiates checkout order session with unique request IDs to prevent double-billing.
+  - Simulates signature checkout validations and payment status callback hooks.
+
+### 6. P2P Transfer Checkout (`send money.png`)
+![Peer-to-Peer Transfer Checkout](./pic/send%20money.png)
+* **Functionality**:
+  - Verified payee lookup check before entering PIN.
+  - Alphabetical UUID sorting before locking wallet rows, eliminating concurrent deadlocks.
+  - Requires 6-digit transaction PIN (bcrypt protected, locks after 5 wrong tries).
+  - Checks daily spend velocity limit against Redis sliding window.
+  - Toggle switches to force simulation failures or pending review processing states.
+
+### 7. Billing Request Invoicing (`request.png`)
+![Payment Billing Request Invoicing](./pic/request.png)
+* **Functionality**:
+  - Dispatches billing invoices to other candidates.
+  - Lists sent request log history statuses (`PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`).
+
+### 8. Transaction Log Ledger (`transactions.png`)
+![Transaction Log Ledger](./pic/transactions.png)
+* **Functionality**:
+  - Paginated, header-sortable log table.
+  - Dispute ticket filing action button (restricted to 1 dispute per transaction).
+  - Transfer rollback (reversal request) submission action button.
+
+### 9. Admin Transaction Log (`admin transactions.png`)
+![Admin Global Transactions Ledger](./pic/admin%20transactions.png)
+* **Functionality**:
+  - Audit trail listing all transactions across all users, with audit log tracing.
+
+### 10. Admin Spawner Portal (`create admin.png`)
+![Administrative Account Spawner](./pic/create%20admin.png)
+* **Functionality**:
+  - Secure registration restricted to active administrators to register new admins.
+  - Complexity checks, confirm match password, and administrative logs.
+
+### 11. Change Password Panel (`change password.png`)
+![Credentials Change Password Panel](./pic/change%20password.png)
+* **Functionality**:
+  - Modifies account passwords, checking current credentials.
+  - Evicts and invalidates all other active session IDs across all devices inside the Redis session cache.
+
+### 12. Analytics Center Graphs (`analytics.png`)
+![Analytics Center Graphs](./pic/analytics.png)
+* **Functionality**:
+  - Interactive charts plotting daily volume trends and success rates using Recharts.
+  - Fast response speeds by serving pre-aggregated statistics from Redis (auto-evicted on new transactions).
+
+### 13. Admin User Director (`admin control user diroctiry.png`)
+![Admin User Directory & Limit Editor](./pic/admin%20control%20user%20diroctiry.png)
+* **Functionality**:
+  - Administrative control panel displaying all users and balances.
+  - Allows editing daily transaction spend limits dynamically.
+
+### 14. Admin Refund Claims Manager (`admin control refund request.png`)
+![Admin Refund Claims Manager](./pic/admin%20control%20refund%20request.png)
+* **Functionality**:
+  - Lists and audits pending refund claims.
+  - Approving a claim credits the user's wallet and records transaction audits.
+
+### 15. Admin Disputes Resolution (`admin control dispute.png`)
+![Admin Disputes FSM Resolution Control](./pic/admin%20control%20dispute.png)
+* **Functionality**:
+  - Audits dispute claims filed by candidates.
+  - Transitions disputes through FSM paths (`OPEN -> UNDER_REVIEW -> RESOLVED/REJECTED`) and records administrative notes.
+
+---
+
+## 🛡️ Security Features & OWASP Hardening
+
+1. **HttpOnly Session Cookies & Redis Session Store**: Session storage is kept inside Redis with sliding expiration windows, rotated upon login, and cleared on logout.
+2. **Turnstile Bot Verification**: CAPTCHA check in registration and dynamically required after 3 failed login attempts.
+3. **CSRF Prevention Middleware**: Enforces CSRF validation via `X-CSRF-Token` headers for all state-changing HTTP methods.
+4. **Brute Force Lockouts**: 15-minute lockout after 10 failed logins (and 5 failed P2P PIN entries).
+5. **HMAC Webhook Validation**: timed callbacks verify SHA-256 HMAC signatures timing-safely via `crypto.timingSafeEqual` to prevent side-channel timing attacks.
+6. **Idempotency Key Guard**: Blocks duplicate transactions by checking unique client-provided `requestId` values.
+7. **Role-Based Access Control (RBAC)**: Admins are blocked from user actions, and users cannot trigger approvals.
+8. **ASVS Password Rules**: Implements strict password strength checking (minimum 12 chars, complexity, dictionary blocklists, and sequential character bans).
+9. **CORS Policy constraints**: Restricts cross-origin requests to the explicit `FRONTEND_URL` in production, rejecting wildcards.
