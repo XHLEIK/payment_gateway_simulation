@@ -1,21 +1,14 @@
-# Regilly Assignment
-## Payment Gateway & Wallet Management System
+# Fintech Payment Gateway & Wallet Management System
 
-A production-grade, highly secure, and concurrency-safe fintech payment gateway and wallet management system designed for Regilly candidate portals. This system supports candidate wallet top-ups, instant application payment processing, multi-stage state transitions, administrator-approved refund workflows, and real-time dashboard analytics.
-
----
-
-### 📖 Quick Links
-- **NestJS Backend Details**: [backend/README.md](file:///c:/Users/ASUS/Desktop/payment_gateway/backend/README.md)
-- **Next.js Frontend Details**: [payment_gateway/README.md](file:///c:/Users/ASUS/Desktop/payment_gateway/payment_gateway/README.md)
+A production-grade, highly secure, and concurrency-safe fintech payment gateway and wallet management system. This system supports candidate wallet top-ups, instant application payment processing, multi-stage transaction state transitions, administrator-approved refund workflows, peer-to-peer (P2P) transfers with deadlock prevention, and real-time dashboard analytics.
 
 ---
 
 ## 🏗️ System Architecture
 
 The application is structured as a decoupled monorepo containing:
-1. **NestJS Backend**: Built on a modular NestJS framework, featuring TypeORM, PostgreSQL, Redis caching, rate limiting, and Winston structured logger.
-2. **Next.js Frontend**: A modular Next.js candidate portal featuring dark mode, TanStack React Query for state synchronization, and Recharts for interactive analytics.
+1. **NestJS Backend**: Modular backend framework featuring TypeORM, PostgreSQL, Redis caching, rate limiting, and Winston structured logging.
+2. **Next.js Frontend**: Portal featuring dynamic dark mode, TanStack React Query for state synchronization, and Recharts for interactive analytics.
 
 ```mermaid
 graph TD
@@ -33,48 +26,6 @@ graph TD
     end
 ```
 
-### 🔄 System Data Flow
-```text
-Candidate (User)
-       │
-       ▼ (Initiate Payment)
-   Payment API
-       │
-       ▼ (Create Transaction in INITIATED state)
-  Transaction
-       │
-       ▼ (Pessimistic Lock on Wallet & Update Balance)
- Wallet Update
-       │
-       ▼ (Record Transition State in SUCCESS/FAILED)
-   Audit Log
-```
----
-
-## 🌟 Advanced Production-Grade Features
-
-In addition to standard wallet credits and debits, the portal implements five production-grade enterprise functionalities:
-
-### 1. In-App Real-Time Notification System (Bell & Sliding Drawer)
-- **Redis-Backed Unread Tracking**: Employs atomic `INCR`/`DECR` operations on Redis keys (`unread:{userId}`) to query unread badge counts in $O(1)$ time, bypassing database load.
-- **Glassmorphic Drawer Layout**: A sliding notifications overlay panel on the Next.js header detailing recent transaction updates, disputes, and request rollbacks with automatic read marking.
-
-### 2. Peer-to-Peer (P2P) Transfer Reversals
-- **Compensating Transactions**: Candidates can click a "Rollback" trigger on successful transfers. Approved requests dynamically execute a compensating debit/credit transaction to restore original balances safely.
-- **Circular Locking Deadlock Protection**: When transferring balances, user UUIDs are sorted alphabetically before executing Row-Level Locking (`SELECT FOR UPDATE`), eliminating circular dependency deadlocks.
-
-### 3. Interactive Payment Simulations & Admin Verification Queues
-- **Simulation Toggles**: Integrated within the transfer checkout step are toggles to simulate a "FAILED" or "PROCESSING" state.
-- **Admin Decision Pipeline**: Transactions set to "PROCESSING" bypass automatic gateway resolution and are instead placed into a dedicated Admin Queue for approval or rejection.
-
-### 4. Finite State Machine (FSM) Dispute Resolution
-- **FSM State Validation**: Built-in state validation enforcing strict transitions (`OPEN -> UNDER_REVIEW -> RESOLVED/REJECTED`) with constant-time lookup.
-- **Conflict Prevention**: Uses a composite database index `idx_dispute_txn_user` to restrict users to a single dispute claim per transaction.
-
-### 5. Velocity Spend Checks & Daily Limits
-- **Redis Sliding Window Rate Limiting**: Outgoing transactions are checked against a configured daily spend limit using a Redis-backed sliding window for instant $O(1)$ spend validation.
-- **Database Graceful Fallback**: In the event of a Redis outage, the system automatically falls back to aggregation queries on PostgreSQL to calculate total daily spend.
-
 ---
 
 ## 🛠️ Tech Stack
@@ -83,226 +34,241 @@ In addition to standard wallet credits and debits, the portal implements five pr
 * **Framework**: NestJS (v11.x)
 * **ORM**: TypeORM (v0.3.x) with PostgreSQL driver
 * **Database**: PostgreSQL (v16+)
-* **Caching & Rate Limiting**: Redis (ioredis) & NestJS Throttler
+* **Caching & Sessions**: Redis (ioredis) & NestJS Throttler
 * **Security & Auth**: Passport JWT, Bcrypt password hashing, Crypto HMAC signature validation
 * **Logging & Telemetry**: Winston Logger with request-scoped `X-Correlation-ID` tracing
 
 ### Frontend
 * **Framework**: Next.js (v16.x) App Router
-* **Styling**: Tailwind CSS v4 (Sleek dark mode)
+* **Styling**: Tailwind CSS v4 (Sleek dark mode) & Vanilla CSS variables
 * **Icons**: Lucide React
 * **State Management & Fetching**: TanStack React Query (v5)
 * **Visualization**: Recharts (v3)
 
 ---
 
-## 🗄️ Database Design
+## ⚙️ Environment Variables
 
-The database is built on PostgreSQL with strict check constraints and composite/partial indexes for maximum safety and performance.
-
-```
-┌─────────────────────────┐         ┌─────────────────────────┐
-│          users          │         │         wallets         │
-├─────────────────────────┤         ├─────────────────────────┤
-│ id (UUID, PK)           │◄───────┐│ id (UUID, PK)           │
-│ name (VARCHAR)          │         │ user_id (UUID, FK, UNQ) │
-│ email (VARCHAR, UNQ)    │         │ balance (NUMERIC >= 0)  │
-│ password_hash (VARCHAR) │         └─────────────────────────┘
-│ role (VARCHAR)          │
-└─────────────────────────┘
-             ▲
-             │
-             │                      ┌─────────────────────────┐
-             ├─────────────────────┐│      transactions       │
-             │                     │├─────────────────────────┤
-             │                     └│ id (UUID, PK)           │
-             │                      │ reference_id (VARCHAR)  │
-             │                      │ user_id (UUID, FK)      │
-             │                      │ amount (NUMERIC > 0)    │
-             │                      │ type (CREDIT | DEBIT)   │
-             │                      │ status (INITIATED...)   │
-             │                      │ balance_after (NUMERIC) │
-             │                      │ request_id (UNQ)        │
-             │                      └─────────────────────────┘
-             │                                   ▲
-             │                                   │
-             │                      ┌────────────┴────────────┐
-             │                      │         refunds         │
-             │                      ├─────────────────────────┤
-             │                      │ id (UUID, PK)           │
-             │                      │ transaction_id (FK)     │
-             │                      │ amount (NUMERIC)        │
-             │                      │ status (PENDING...)     │
-             └──────────────────────│ approved_by (UUID, FK)  │
-                                    └─────────────────────────┘
-```
-
-### Key Optimizations (Defined in `schema.sql`)
-1. **Pessimistic Wallet Locking**: Updates are performed via `SELECT FOR UPDATE` on user wallets inside `SERIALIZABLE` isolation blocks, preventing dirty reads and race conditions.
-2. **Composite Index**: `idx_txn_user_date` on `(user_id, created_at DESC)` ensures candidate dashboards and historical transaction lists load in **< 0.05 ms**.
-3. **Partial Index**: `idx_txn_status_partial` on `status WHERE status != 'SUCCESS'` optimizes lookup speeds for active/pending payments by ignoring completed transactions.
-
----
-
-## 💸 Peer-to-Peer (P2P) Transfers & Security
-
-Candidates can transfer funds directly to other registered candidate accounts and submit payment requests. This flow is guarded by several production-grade security and concurrency protocols:
-
-### 1. Alphabetical UUID Sorted Locking (Deadlock Prevention)
-When User A sends money to User B, and User B sends to User A concurrently, databases can deadlock if locks are acquired in different orders (e.g., Transaction 1 locks A then B; Transaction 2 locks B then A). 
-To prevent this, the system **sorts the user UUIDs alphabetically** before acquiring database locks:
-```typescript
-const sortedUserIds = [senderId, recipientId].sort();
-// Lock sortedUserIds[0] first, then lock sortedUserIds[1]
-```
-This guarantees that both concurrent transfers acquire locks on User A first, then User B, entirely eliminating deadlocks.
-
-### 2. Transaction PIN Brute-Force Lockout
-P2P transfers and payment request approvals require a 6-digit transaction PIN. To prevent brute-force attacks:
-- The PIN is hashed using `bcrypt` (10 rounds) and stored in `users.transaction_pin_hash`.
-- The system tracks failed entries using `users.pin_attempts` and `users.pin_locked_until`.
-- **5 consecutive wrong entries** triggers a **15-minute account lockout**.
-- Re-configuring the PIN resets the lockout and attempt counters.
-
-### 3. Payment Request Lifecycle
-Payment requests have a formal state machine:
-```
-PENDING ──► APPROVED (paid via PIN)
-   │
-   ├──► REJECTED
-   └──► EXPIRED (past due limit)
-```
-
----
-
-## ⚡ Concurrency & State Machine
-
-### Concurrency Locking
-Under heavy concurrent debit requests (e.g. multiple exam application fees submitted simultaneously), the system enforces:
-* **Row-level Locks**: `SELECT ... FOR UPDATE` locks the wallet row, blocking concurrent writers.
-* **Serializable Isolation**: If a concurrent update slips past locks, PostgreSQL fails the transaction serialization and rolls back safely.
-
-### Payment State Machine
-Transitions are locked to the following path:
-```
-INITIATED ──► PROCESSING ──► SUCCESS ──► REFUNDED
-   │               │
-   ▼               ▼
-FAILED          FAILED
-```
-*Invalid transitions (e.g., FAILED ──► SUCCESS or REFUNDED ──► PROCESSING) are rejected automatically at the application layer.*
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-* **Node.js**: v20 or higher
-* **PostgreSQL**: Local running database on port 5432
-* **Redis**: Local running server on port 6379
-
-### Environment Variables
-Configure the following in `backend/.env`:
+### Backend Configuration (`backend/.env`)
+Create a `.env` file at the root of the `backend/` directory:
 ```env
 PORT=3001
 NODE_ENV=development
 
+# Database Connection
 DB_HOST=localhost
 DB_PORT=5432
 DB_USERNAME=postgres
 DB_PASSWORD=your_db_password
 DB_NAME=payment_gateway_db
+DB_POOL_MIN=2
+DB_POOL_MAX=10
 
+# Redis Cache & Sessions Connection
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 
+# Cryptographic Keys & Bot Protection
 WEBHOOK_SECRET=your_webhook_secret_key
-
-# Cloudflare Turnstile CAPTCHA Keys (Dummy keys are used by default in development)
 TURNSTILE_SECRET_KEY=1x00000000000000000000000000000000UNSHIELD
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA
 ```
 
-### 1. Database Setup & Seeding
-Run the database initialization and seeder scripts. The demo seeder generates **1 Admin**, **10 Users**, **60 Transactions**, and **5 Refund requests**:
+### Frontend Configuration (`payment_gateway/.env.local`)
+Create a `.env.local` file inside the `payment_gateway/` directory:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:3001/api
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA
+```
+
+---
+
+## 🚀 Setup & Installation Steps
+
+Follow these instructions to clone, configure, seed, and run the project locally.
+
+### 1. Prerequisites
+Ensure you have the following installed and running on your system:
+* **Node.js**: v20 or higher
+* **PostgreSQL**: Running database on port `5432`
+* **Redis**: Running cache server on port `6379`
+
+### 2. Clone the Repository
+```bash
+git clone <repository_url>
+cd payment_gateway
+```
+
+### 3. Backend Setup & Database Seeding
+Navigate to the `backend` directory, install dependencies, prepare the database, and seed the demo data (this is required to generate the dummy candidate users, admins, and mock transactions):
 ```bash
 cd backend
 npm install
 
-# Initialize database
+# 1. Verify and create the PostgreSQL database
 node scripts/init-db.js
 
-# Seed demo dataset
-node scripts/seed-demo.js
+# 2. Re-apply DB schema and seed demo dataset
+# (Generates 1 Admin, 10 Users, 60 Transactions, and 5 Refund requests)
+node seed-demo.js
 ```
 
-### 2. Run the Backend
+### 4. Run the Backend API Server
 ```bash
-cd backend
+# Start in development mode (hot-reloading enabled)
 npm run start:dev
-```
-The NestJS server will start on `http://localhost:3001`.
 
-### 3. Run the Frontend
+# Or build and start in production mode
+npm run build
+npm run start:prod
+```
+The NestJS server will start listening on `http://localhost:3001/api`.
+
+### 5. Frontend Setup & Run
+Open a new terminal session, navigate to the `payment_gateway` directory, install dependencies, and launch the portal:
 ```bash
 cd payment_gateway
 npm install
+
+# Start Next.js development server
 npm run dev
 ```
-The Next.js candidate portal will start on `http://localhost:3000`.
+Open [http://localhost:3000](http://localhost:3000) in your browser to access the portal.
 
 ---
 
-## 🔑 Demo Credentials
-Demo credentials are programmatically configured inside the seed data configuration (see [seed-demo.js](file:///c:/Users/ASUS/Desktop/payment_gateway/backend/scripts/seed-demo.js) or [schema.sql](file:///c:/Users/ASUS/Desktop/payment_gateway/schema.sql)). Default credentials for candidate and administrator accounts are set to local testing profiles:
+## 🔑 Default Demo Credentials
+Seeding generates standard testing profiles configured with the password `Subham@1234` and the transaction PIN `123456` (configured via setup screens):
 
-| Role | Username | Starting Balance | Password Location |
+| Role | Username | Initial Balance | Password |
 | :--- | :--- | :---: | :--- |
-| **Candidate (User)** | `user@regilly.com` | ₹2,500.00 | Refer to `seed-demo.js` / `.env.example` |
-| **Administrator** | `admin@regilly.com` | ₹10,000.00 | Refer to `seed-demo.js` / `.env.example` |
+| **Candidate (User)** | `user@regilly.com` | ₹2,500.00 | `Subham@1234` |
+| **Administrator** | `admin@regilly.com` | ₹10,000.00 | `Subham@1234` |
 
 ---
 
-## 📋 API Documentation Summary
+## 📋 API Documentation
 
-### Authentication
-* `POST /api/auth/register` - Create a candidate account (verifies Turnstile token, returns user, CSRF token, and sets session cookie)
-* `POST /api/auth/login` - Authenticate, start session in Redis, and return CSRF token (sets session cookie)
-* `POST /api/auth/logout` - Clear session in Redis and expire session cookie (Session-protected)
-* `GET /api/auth/me` - Retrieve current session's user profile (Session-protected)
-* `GET /api/auth/csrf` - Retrieve a fresh CSRF token for the active session (Cookie-protected)
-* `GET /api/auth/captcha-required` - Check if Turnstile is required for a login attempt (IP/email check)
+All state-changing endpoints (POST, PATCH, DELETE) require a valid CSRF token passed via the `X-CSRF-Token` header.
 
-### Wallet
-* `GET /api/wallet/balance` - Retrieve current balance
-* `POST /api/wallet/credit` - Load funds into wallet
-* `POST /api/wallet/debit` - Withdraw/spend funds
+### 🔒 Authentication (`/api/auth`)
+* `POST /api/auth/register`
+  - **Description**: Registers a new standard user account.
+  - **Payload**: `{ name, email, password, confirmPassword, captchaId, captchaValue }`
+* `POST /api/auth/login`
+  - **Description**: Authenticates users and initiates a session cookie.
+  - **Payload**: `{ email, password, captchaId, captchaValue }`
+* `POST /api/auth/logout`
+  - **Description**: Clears the active session and expires the session cookie.
+* `GET /api/auth/me`
+  - **Description**: Retrieves current session's profile info.
+* `GET /api/auth/csrf`
+  - **Description**: Retrieves a fresh CSRF token for the session.
+* `GET /api/auth/captcha-required`
+  - **Description**: Checks if Turnstile bot protection is required based on failed logins.
+* `GET /api/auth/captcha`
+  - **Description**: Returns a distorted random math/text SVG CAPTCHA (2-minute expiry).
+* `POST /api/auth/create-admin`
+  - **Description**: Allows an admin to register another admin.
+  - **Payload**: `{ name, email, password, confirmPassword }`
+* `POST /api/auth/change-password`
+  - **Description**: Updates user password and invalidates other concurrent device sessions.
+  - **Payload**: `{ currentPassword, newPassword, confirmNewPassword }`
 
-### Payments
-* `POST /api/payments/initiate` - Initiate a gateway transaction
-* `POST /api/payments/verify` - Simulate payment gateway success callback
-* `POST /api/payments/webhook` - HMAC-secured webhook handler
+### 💳 Wallet & P2P Transfers (`/api/wallet`)
+* `GET /api/wallet/balance`
+  - **Description**: Retrieves the active user's wallet balance.
+* `GET /api/wallet/history`
+  - **Description**: Retrieves the transaction history ledger log for the user.
+* `GET /api/wallet/daily-limit`
+  - **Description**: Returns daily spend limits, spent amount, and remaining allowance.
+* `POST /api/wallet/daily-limit/:userId`
+  - **Description**: Admin-only endpoint to set a user's daily spend velocity limit.
+  - **Payload**: `{ limit }`
+* `POST /api/wallet/credit`
+  - **Description**: Admin-only endpoint to deposit funds to a user's wallet.
+  - **Payload**: `{ userId, amount }`
+* `POST /api/wallet/send-money`
+  - **Description**: Sends money peer-to-peer to another user.
+  - **Payload**: `{ recipientEmail, amount, pin, requestId, simulateFailure, simulateProcessing }`
+* `POST /api/wallet/approve-processing/:id`
+  - **Description**: Admin-only endpoint to approve a transfer stuck in processing state.
+* `POST /api/wallet/reject-processing/:id`
+  - **Description**: Admin-only endpoint to reject a transfer stuck in processing state.
 
-### Refunds
-* `POST /api/refunds/request` - Candidate requests refund for a DEBIT transaction
-* `POST /api/refunds/approve/:id` - Admin approves refund (updates wallet & transition status)
-* `POST /api/refunds/reject/:id` - Admin rejects refund
+### 🔄 Transactions & Reversals (`/api/transactions`)
+* `GET /api/transactions`
+  - **Description**: Retrieves transaction ledger (Admin lists all, User lists own).
+* `GET /api/transactions/pending-reversals`
+  - **Description**: Admin-only endpoint to list pending rollback/reversal requests.
+* `GET /api/transactions/processing-transfers`
+  - **Description**: Admin-only endpoint to list transactions awaiting administrative approval.
+* `GET /api/transactions/:id`
+  - **Description**: Retrieves details for a specific transaction.
+* `POST /api/transactions/:id/request-reversal`
+  - **Description**: User requests rollback/reversal of a successful P2P transfer.
+  - **Payload**: `{ reason }`
+* `POST /api/transactions/:id/approve-reversal`
+  - **Description**: Admin-only endpoint to approve a reversal request (executes compensating ledger entries).
+* `POST /api/transactions/:id/reject-reversal`
+  - **Description**: Admin-only endpoint to deny a reversal request.
 
-### Analytics & Reports
-* `GET /api/analytics/daily` - Get 14-day transaction trend stats (cached in Redis)
-* `GET /api/reports/export` - Export transaction logs to CSV with custom date filters
+### 💰 Gateway Payments & Billing Requests (`/api/payments`)
+* `POST /api/payments/initiate`
+  - **Description**: Initiates a checkout session for credit load.
+  - **Payload**: `{ amount, type, requestId }`
+* `POST /api/payments/verify`
+  - **Description**: Verifies checkout session signature and schedules the payment callback.
+  - **Payload**: `{ orderId, signature }`
+* `POST /api/payments/webhook`
+  - **Description**: HMAC-secured endpoint resolving payment webhook callbacks.
+* `POST /api/payments/requests`
+  - **Description**: Sends a billing request invoice to another user's email.
+  - **Payload**: `{ recipientEmail, amount }`
+* `GET /api/payments/requests/received`
+  - **Description**: Returns incoming billing requests awaiting payment/rejection.
+* `GET /api/payments/requests/sent`
+  - **Description**: Returns sent billing requests and their states.
+* `POST /api/payments/requests/:id/approve`
+  - **Description**: Approves and pays a received billing request.
+  - **Payload**: `{ pin }`
+* `POST /api/payments/requests/:id/reject`
+  - **Description**: Rejects a received billing request.
 
----
+### 🛡️ Refund Claims (`/api/refunds`)
+* `POST /api/refunds/request`
+  - **Description**: Submits a refund claim for a successful debit transaction.
+  - **Payload**: `{ transactionId, reason, amount }`
+* `POST /api/refunds/approve/:id`
+  - **Description**: Admin-only endpoint to approve refund claim and credit user wallet.
+* `POST /api/refunds/reject/:id`
+  - **Description**: Admin-only endpoint to reject refund claim.
+* `GET /api/refunds`
+  - **Description**: Lists refund claims.
 
-## 🛡️ Security Features & OWASP Hardening
-1. **HTTP-Only Session Cookies & Redis Session Store**: Replaced client-side JWT local storage with secure HTTP-Only, SameSite=Strict cookies. Sessions are tracked inside Redis with sliding expiration windows and rotated/destroyed on login/logout/resets.
-2. **Cloudflare Turnstile Bot Protection**: Integrates CAPTCHA verification directly in registration and dynamically requires it after 3 failed login attempts (becoming mandatory after 5 failed attempts).
-3. **CSRF Prevention Middleware**: Enforces CSRF validation via `X-CSRF-Token` headers for all state-changing HTTP methods (POST, PUT, DELETE, PATCH).
-4. **Brute Force Lockouts & Spend Limits**: Restricts login rates and forces temporary lockouts of 15 minutes after 10 failed logins, and logs security alerts after 20 failed logins. Velocity limits control daily wallet transaction ceilings.
-5. **Timing-Safe HMAC Webhook Verification**: Gateway callbacks are protected with SHA-256 HMAC signatures computed from request payloads and the shared `WEBHOOK_SECRET`. String comparisons use `crypto.timingSafeEqual` over pre-hashed signatures to protect against side-channel timing attacks (remediates OWASP Cryptographic Failures).
-6. **Idempotency Key Guard**: Each transaction requires a unique `requestId` (UUID or unique key). Duplicate requests are intercepted, preventing double-debits.
-7. **Role-Based Access Control (RBAC)**: Route guards inspect session credentials; admins are restricted from user wallet actions, and users cannot access refund approval or admin listings (remediates OWASP Broken Access Control).
-8. **HTTP Defense-in-Depth Headers (Helmet)**: Express `helmet` middleware is registered to apply standard security headers, mitigating MIME-sniffing (`X-Content-Type-Options: nosniff`), clickjacking (`X-Frame-Options: SAMEORIGIN`), and forcing SSL/TLS constraints.
-9. **Strict Production CORS Policy**: CORS configuration dynamically restricts access to the explicit `FRONTEND_URL` in production, rejecting wildcards or arbitrary origin reflections.
-10. **ASVS Password Rules**: Implements strict password strength checking (minimum 12 chars, complexity, common pattern dictionary blocklists, and sequential character bans).
+### 🔔 In-App Notifications (`/api/notifications`)
+* `GET /api/notifications`
+  - **Description**: Lists notification events for the active user.
+* `GET /api/notifications/unread-count`
+  - **Description**: Retrieves unread badge counts in $O(1)$ directly from Redis.
+* `PATCH /api/notifications/:id/read`
+  - **Description**: Marks a specific notification as read.
+* `PATCH /api/notifications/read-all`
+  - **Description**: Marks all notifications as read and resets Redis unread counter.
 
+### ⚖️ Disputes FSM (`/api/disputes`)
+* `POST /api/disputes`
+  - **Description**: Submits a dispute claim against a transaction (max 1 dispute per transaction).
+  - **Payload**: `{ transactionId, reason, description }`
+* `GET /api/disputes`
+  - **Description**: Lists dispute tickets.
+* `PATCH /api/disputes/:id/status`
+  - **Description**: Admin-only endpoint to transition disputes through FSM paths (`OPEN -> UNDER_REVIEW -> RESOLVED/REJECTED`).
+  - **Payload**: `{ status, adminNotes }`
+
+### 📊 Reports & Analytics (`/api/analytics`, `/api/reports`)
+* `GET /api/analytics/summary`
+  - **Description**: Admin-only endpoint returning 14-day aggregated volume graphs (cached in Redis).
+* `GET /api/reports/download`
+  - **Description**: Exports transaction logs to a download-ready CSV ledger.
+  - **QueryParams**: `?startDate=&endDate=&type=&status=`
